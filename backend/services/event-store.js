@@ -12,6 +12,7 @@ const VISITOR_EVENT_TYPES = new Set([
   "personalization_generated",
   "company_resolved",
   "visitor_identified",
+  "meeting_booked",
 ]);
 
 let events = [];
