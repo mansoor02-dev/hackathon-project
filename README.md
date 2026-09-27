@@ -95,6 +95,39 @@ If anything is offline on stage: every panel has an honest empty state, and
 `/api/analytics` labels each number `graph8` / `app` / `demo` — nothing is
 fabricated, which is itself a talking point.
 
+## API reference (all endpoints)
+
+Health / visitor / dashboard:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Backend liveness badge. |
+| `GET` | `/api/resolve-visitor[?domain=]` | Visitor resolution (live enrichment or webhook state; `?domain=` demo override). |
+| `GET` | `/api/graph8/status` | Graph8 credential check (read-only `contacts.list`, no billable calls). |
+| `GET` | `/api/events[?limit=]` | Persisted event feed for the timeline. |
+| `GET` | `/api/state` | Dashboard snapshot: visitor, meeting, coaching, voice, recovery summary. |
+
+Recovery / outbound:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/recovery` | Opportunities + counts + sequence/list status. |
+| `GET` | `/api/recovery/:domain` | Single opportunity with contact, verification, timeline. |
+| `POST` | `/api/recovery/:domain/process` | Run discovery → enrich → verify → list → sequence pipeline (dry-run safe). |
+| `POST` | `/api/recovery/:domain/enroll` | Explicit enrollment (same safety gates + meeting re-check). |
+| `GET` | `/api/sequences/status` | Honest mode: `LIVE` / `DRY_RUN` / `NOT_CONFIGURED`. |
+| `GET` | `/api/inbox/status` | Reply visibility (review-only, never auto-sent). |
+| `GET` | `/api/analytics` | App metrics + Graph8 `intent.stats`, each labelled by source. |
+| `GET` | `/api/automation/status` | Workflow + skills + sequence integration status. |
+
+Webhooks (all HMAC-verified, see below):
+
+| Method | Path | Events |
+|---|---|---|
+| `POST` | `/webhooks/graph8/signals/visitor` | `visitor.identified`, `intent.signal` |
+| `POST` | `/webhooks/graph8/appointments/booked` | `meeting.booked`, `meeting.cancelled`, `meeting.rescheduled` (+ engagement fallback) |
+| `POST` | `/webhooks/graph8/engagement` | `engagement.email_replied` et al, `sequence.contact_enrolled`, `form.submitted` |
+
 ## Environment variables
 
 Full template with where-to-find-each-value: `backend/.env.example`
@@ -220,8 +253,9 @@ ready for outreach → enrolled
 2. `POST /api/recovery/:domain/process` runs the pipeline:
    `companies.contacts` → `enrich.search`/`search.contacts` (discovery) →
    `enrich.person` only when fields are missing (1 credit saved otherwise) →
-   `enrich.verifyEmail` gate → `lists` segmentation (`Signal Desk — Recovery`,
-   found-or-created once) → re-check meeting → Sequencer.
+   `enrich.verifyEmail` gate → `lists` segmentation (list id wins when
+   configured — this workspace: id `3` "Recovery List"; otherwise the title
+   is found-or-created once) → re-check meeting → Sequencer.
 3. `meeting.booked` cancels recovery for the account; `meeting.cancelled`
    re-opens it.
 4. Idempotency: persistent `backend/data/recovery.json` + Graph8
@@ -290,20 +324,13 @@ enrollment?), timeline.
 
 ## Demo procedure
 
-1. `GET /api/graph8/status` → connected. Dashboard shows Graph8 Connected.
-2. Trigger/await `visitor.identified` webhook (or open
-   `/api/resolve-visitor?domain=<customer-domain>` for the enrichment path).
-3. Dashboard shows company, traffic type, intent, variant.
-4. Visitor sees personalized headline/CTA; Graph8 page reused via cache.
-5. High-intent + engagement + no meeting → recovery opportunity appears
-   (`GET /api/recovery`).
-6. `POST /api/recovery/:domain/process` → contact → enriched → verified →
-   "Ready for Sequence" (dry-run) or enrolled (live, if enabled).
-7. Book via Graph8 Calendar → webhook → dashboard records meeting + prep,
-   recovery cancelled for the account.
-8. With `GRAPH8_VOICE_AGENT_ID`: real voice script; without: labelled simulation.
-9. Fallback: unknown visitor → generic page, no crash; no contact →
-   Graph8 task, never silent.
+See [Live demo script](#live-demo-script-judges-5-minutes) above — the
+condensed judge-facing version. Operator notes:
+
+- Fallback: unknown visitor → generic page, no crash; no contact →
+  Graph8 task, never silent.
+- After any demo run, clear `backend/data/events.json` +
+  `backend/data/recovery.json` to reset the dashboard.
 
 ## Which parts are real vs mocked
 
