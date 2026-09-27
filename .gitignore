@@ -1,0 +1,7 @@
+.env
+.env.local
+
+*.txt
+
+ARCHITECTURE.md
+node_modules
