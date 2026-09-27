@@ -20,6 +20,8 @@ workflow: **identify → understand → personalize → convert → recover**.
 Every step is backed by a real Graph8 capability, and every dashboard state
 honestly says whether it is live, simulated, or not configured.
 
+Preparing to present or defend the project? See [Interview Prep](INTERVIEW_PREP.md).
+
 ```
 Visitor
   ↓
@@ -58,6 +60,19 @@ visitor -> Graph8 signals -> Express backend -> classification
   at `https://be.graph8.com/api/v1/docs` carries no machine-readable content,
   so the SDK contract is the source of truth — nothing invented).
 
+## Deployment status
+
+- `frontend/` is deployed to Vercel. The project root is `frontend/`, and
+  `VITE_API_BASE_URL` points the browser app at the backend.
+- The backend is a separate Node/Express process. During the demo it can be
+  exposed with ngrok; this is a temporary tunnel, not durable production
+  hosting. Keep both the backend and tunnel running, and update Graph8's
+  webhook URLs whenever the free ngrok URL changes.
+- Event and recovery state currently uses local JSON files. A durable
+  production deployment needs persistent backend hosting and durable storage;
+  a Vercel frontend deployment alone does not host the backend or preserve its
+  local files.
+
 ## Graph8 features used
 
 | Area | Graph8 capability | How |
@@ -81,23 +96,33 @@ Workflows/Skills are wired as optional (`GRAPH8_RECOVERY_WORKFLOW_ID`,
 
 Small, demo-obvious variant set — families `default` | `saas` | `enterprise`:
 
-- `enterprise` — high intent (score ≥ 60) or explicit target account.
-- `saas` — medium intent at a technology company.
-- `default` — unknown visitor, low intent, or anything else (never over-claims).
+- Live webhook traffic: `enterprise` for high intent (score ≥ 60) or a
+  configured target account; `saas` for medium intent (score 40–59) at a
+  technology company; otherwise `default`.
+- Explicit domain previews in `/experience`: Graph8 resolves the company and
+  returns its real intent score. If intent is low or unavailable, the page
+  shows company-tailored demo copy labeled **Demo personalized** and
+  **Preview — no live intent claimed**. This preview does not create a Graph8
+  landing page. Medium/high-intent results use the regular personalization
+  rules.
+- A target account can be configured as a domain or email in
+  `GRAPH8_TARGET_ACCOUNTS`; email entries are normalized to their domain.
 
-Every decision carries a human-readable `reason` (e.g. "High intent score 85
-(≥60) for Acme — enterprise experience."). The dashboard shows identified
-company, Graph8 signals, traffic classification, intent, selected variant,
-and the reason. Unknown visitors fall back to the default experience.
+Every decision carries a human-readable `reason`. The Experience page shows
+the source, resolved company, intent score, selected family, and why the copy
+was selected. Domain previews do not create Dashboard traffic: the Dashboard
+records events received by the backend, primarily through signed Graph8
+webhooks.
 
 1. `GET /api/resolve-visitor[?domain=]` — explicit domain (demo override, live
    `enrich.company` + best-effort `signals.company`) or latest webhook state.
 2. `classifyTraffic()` → `unknown|low_intent|medium_intent|high_intent|target_account`
    (`target_account` only on explicit `GRAPH8_TARGET_ACCOUNTS` match).
 3. `buildPersonalization()` → deterministic copy + `family` + `reason`.
-4. `generateDynamicLandingPage()` → verified Graph8 create + publish (+
-   best-effort preview link), cached by template+domain+variant; failure →
-   generic experience survives.
+4. Eligible live personalization can create and publish a Graph8 landing page
+  through verified operations, cached by template+domain+variant. Failures
+  fall back safely; low/unknown-intent domain previews use local demo copy and
+  do not create a Graph8 page.
 
 ## Recovery flow (secondary feature)
 
@@ -123,12 +148,20 @@ ready for outreach → enrolled
 
 ## Setup
 
+Run these in two terminals from the repository root.
+
+**Terminal 1 — backend**
 ```bash
-cd backend && cp .env.example .env   # fill in keys (table below)
+cd backend
+cp .env.example .env                 # fill in keys (table below)
 npm install
 node server.js                        # :3000
+```
 
-cd frontend && npm install
+**Terminal 2 — frontend**
+```bash
+cd frontend
+npm install
 cp .env.example .env.local
 npm run dev                           # :5173, proxies /health + /api -> backend
 ```
@@ -160,8 +193,9 @@ ngrok http 3000
 Copy the `https://…ngrok-free.app` URL from the ngrok output — call it
 `{PUBLIC}` below. Keep this terminal open; killing ngrok kills deliveries.
 
-**Step 4 — subscribe in Graph8.** Create three webhook subscriptions pointing
-at `{PUBLIC}` (same signing secret as `GRAPH8_WEBHOOK_SECRET`):
+**Step 4 — subscribe in Graph8.** Use the same signing secret as
+`GRAPH8_WEBHOOK_SECRET`. You can use one subscription for all event types or
+the separate event-specific subscriptions:
 
 | Events | URL |
 |---|---|
@@ -170,9 +204,11 @@ at `{PUBLIC}` (same signing secret as `GRAPH8_WEBHOOK_SECRET`):
 | `meeting.booked`, `meeting.cancelled`, `meeting.rescheduled` | `{PUBLIC}/webhooks/graph8/appointments/booked` |
 | `engagement.email_replied`, `sequence.contact_enrolled`, `form.submitted` | `{PUBLIC}/webhooks/graph8/engagement` |
 
-**Step 5 — ngrok restarts change the URL.** Free ngrok URLs change on every
-restart. After any restart, update the three subscription URLs in Graph8 to
-the new `{PUBLIC}`. (A reserved ngrok domain avoids this.)
+The generic `POST {PUBLIC}/webhooks` route verifies the signature and dispatches
+visitor, meeting, and engagement events by event type. Event-specific routes
+are also supported. **Step 5 — ngrok restarts change the URL.** Free ngrok URLs
+change on every restart. After any restart, update the Graph8 subscription URL
+to the new `{PUBLIC}`. (A reserved ngrok domain avoids this.)
 
 ## Live check (step by step)
 
@@ -207,13 +243,16 @@ curl http://127.0.0.1:3000/api/sequences/status
 # mode DRY_RUN = draft configured, nothing will be sent. NOT_CONFIGURED = no id set.
 ```
 
-**5. Webhooks arrive (do one test delivery per subscription in Graph8).**
+**5. Webhooks arrive (send a test delivery from Graph8).**
 ```bash
 curl "http://127.0.0.1:3000/api/events?limit=5"
 # → fresh rows: visitor_identified / meeting_booked / reply_received / ...
 ```
-Each Graph8 test delivery should return HTTP 200 in Graph8's delivery log.
-Dashboard (`:5173`) shows the same rows in the activity timeline.
+Each valid, signed Graph8 delivery should return HTTP 200 in Graph8's delivery
+history and appear as a `POST` in ngrok Inspector (`http://127.0.0.1:4040`).
+An unsigned request returns 401; a wrong host/path returns 404. Dashboard
+traffic is created by webhook processing, not by typing a domain in the
+Experience preview. The dashboard refreshes backend state periodically.
 
 **6. Full pipeline dry-run (no sending, `AUTO_ENROLL=false`).**
 ```bash
@@ -304,11 +343,11 @@ provisioned draft sequence (id `cf8b65c8-…`, status `drafted`, 3 steps,
 
 ## Testing
 
-65 checks, all green: `backend-test.mjs` (29: auth, webhooks, live
-read-only API, mocked flows), `recovery-test.mjs` (25: qualification,
-pipeline, idempotency, safety, endpoints), `personalization-test.mjs` (11:
-variant families/reasons, Day 0/3/7 cadence, enroll guards incl.
-non-CRM-id refusal, live sequence resolution, live resolve-visitor).
+66 checks: `backend-test.mjs` (29: auth, webhooks, live read-only API, mocked
+flows), `recovery-test.mjs` (25: qualification, pipeline, idempotency, safety,
+endpoints), `personalization-test.mjs` (12: variant families/reasons, demo
+preview copy, Day 0/3/7 cadence, enroll guards, live sequence resolution, live
+resolve-visitor).
 No test enrolls, sends, runs, or launches anything — the one live-write
 (sequence draft) was done once by hand, outside tests.
 
