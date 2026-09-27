@@ -236,8 +236,21 @@ function PersonalizationPanel({ resource }) {
           {experience?.variant && (
             <div className="status-row">
               <span className="row-icon"><Sparkles size={15} /></span>
-              <div><strong>Variant</strong><span>{experience.variant}</span></div>
+              <div><strong>Variant · {experience.family || "default"}</strong><span>{experience.variant}</span></div>
               <span className="row-status text-muted">{resource.data.traffic_type}</span>
+            </div>
+          )}
+          {experience?.reason && (
+            <div className="status-row">
+              <span className="row-icon"><ShieldCheck size={15} /></span>
+              <div><strong>Why this variant</strong><span style={{ whiteSpace: "normal" }}>{experience.reason}</span></div>
+            </div>
+          )}
+          {Array.isArray(experience?.signals) && experience.signals.length > 0 && (
+            <div className="status-row">
+              <span className="row-icon"><Radio size={15} /></span>
+              <div><strong>Graph8 signals</strong><span style={{ whiteSpace: "normal" }}>{experience.signals.map((s) => (typeof s === "string" ? s : s?.signal || s?.name || JSON.stringify(s))).join(" · ")}</span></div>
+              <span className="row-status text-muted">graph8</span>
             </div>
           )}
           {resolved && <div className="personalized-copy">{resource.data.cta}</div>}

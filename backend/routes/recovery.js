@@ -2,7 +2,7 @@ import { Router } from "express";
 import { listOpportunities, getOpportunity } from "../services/recovery/store.js";
 import { processRecovery } from "../services/recovery/enrollment.js";
 import { listEvents, getLatestMeeting } from "../services/event-store.js";
-import { sequenceStatus, getSequence, previewSequence } from "../services/graph8/sequences-service.js";
+import { sequenceStatus, getSequence, previewSequence, ensureRecoverySequence } from "../services/graph8/sequences-service.js";
 import { recoveryListStatus } from "../services/graph8/lists-service.js";
 import { listInboxReplies } from "../services/graph8/inbox-service.js";
 import { workflowStatus } from "../services/graph8/workflows-service.js";
@@ -83,6 +83,18 @@ router.get("/sequences/status", async (_req, res) => {
   if (status.mode === "NOT_CONFIGURED") return res.json({ ...status, source: "app" });
   const [details, preview] = await Promise.all([getSequence(), previewSequence()]);
   return res.json({ ...status, source: "graph8", details, preview });
+});
+
+// OUTBOUND: provision the draft recovery sequence (Day 0/3/7, stops on reply).
+// Creates a DRAFT workspace object only — no contacts, never run, nothing sent.
+// Honors GRAPH8_RECOVERY_AUTO_PROVISION; refuses in test env.
+router.post("/sequences/provision", async (_req, res) => {
+  try {
+    const result = await ensureRecoverySequence();
+    return res.json({ ...result, source: result.provisioned ? "graph8" : "app" });
+  } catch (error) {
+    return res.status(500).json({ provisioned: false, mode: "ERROR", reason: error.message });
+  }
 });
 
 // OUTBOUND: inbox / reply visibility (Graph8 metric, draft/review only).

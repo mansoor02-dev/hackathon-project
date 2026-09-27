@@ -18,12 +18,15 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
     const result = await fetchCompanyDetails(normalizedDomain);
     const c = result?.data;
     let intentScore = c?.intentScore ?? null;
+    let signalRows = c?.signals || [];
     // Optionally enrich with live intent signals (read-only, best-effort).
     if (graph8Configured) {
       try {
         const signals = await g8.signals.company(normalizedDomain);
         const s = signals?.score ?? signals?.data?.score ?? null;
         if (Number.isFinite(Number(s))) intentScore = Number(s);
+        const rows = signals?.signals || signals?.data?.signals || [];
+        if (Array.isArray(rows) && rows.length) signalRows = rows.slice(0, 8);
       } catch {
         // signals need intent:read scope — ignore, enrichment is enough.
       }
@@ -34,6 +37,7 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
       industry: c?.industry || null,
       employeeCount: c?.employeeCount || null,
       intentScore,
+      signals: signalRows,
       source: "query",
     };
   } else {
@@ -48,6 +52,7 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
         trafficType: latest.metadata?.trafficType,
         variant: latest.metadata?.variant,
         pageUrl: latest.metadata?.pageUrl || latest.metadata?.url || null,
+        signals: latest.metadata?.signals || [],
         source: "webhook_state",
       };
       // Re-attach industry if we can without billable calls: skip.
@@ -102,7 +107,7 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
     traffic_type: trafficType,
     company: { name: base.companyName, domain: base.domain, industry: base.industry },
     intent: { score: base.intentScore, level: intentLevel(base.intentScore) },
-    experience: { variant, headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: pageUrl, page_id: pageId, page_mode: pageUrl ? pageMode : "fallback" },
+    experience: { variant, family: copy.family, reason: copy.reason, signals: base.signals || [], headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: pageUrl, page_id: pageId, page_mode: pageUrl ? pageMode : "fallback" },
     // legacy flat fields:
     domain: base.domain,
     headline: copy.headline,

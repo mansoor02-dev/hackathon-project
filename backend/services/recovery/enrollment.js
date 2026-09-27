@@ -141,12 +141,12 @@ export async function processRecovery({
     recordEvent("recovery_enrolled", { company: companyName, domain: key, metadata: { sequenceId: result.sequenceId } });
     return { status: "enrolled", domain: key, sequenceId: result.sequenceId };
   }
-  if (result.mode === "DRY_RUN") {
+  if (result.mode === "DRY_RUN" || result.needsCrmContact) {
     upsertOpportunity(key, {
       status: "ready_for_sequence",
       sequenceId: result.sequenceId || null,
       timelineEvent: "ready_for_sequence",
-      timelineDetail: `Would enroll into ${result.sequenceId || "Inbound Recovery"}`,
+      timelineDetail: result.needsCrmContact ? result.reason : `Would enroll into ${result.sequenceId || "Inbound Recovery"}`,
     });
     return { status: "ready_for_sequence", reason: result.reason, domain: key, sequenceId: result.sequenceId || null };
   }

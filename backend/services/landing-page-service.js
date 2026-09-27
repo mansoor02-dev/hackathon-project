@@ -41,6 +41,7 @@ export async function generateDynamicLandingPage(company, { variant = "generic",
     }
 
     let url = null;
+    let previewUrl = null;
     try {
       const published = await g8.api.call(
         "publish_landing_page_landing_pages__landing_page_id__publish_post",
@@ -52,7 +53,18 @@ export async function generateDynamicLandingPage(company, { variant = "generic",
       console.warn("[LANDING PAGE] publish failed:", publishError.message);
     }
 
-    const result = { id: pageId, page, url, cached: false, variant, mode: "real" };
+    // Preview link (read-only, best-effort — useful for the demo dashboard).
+    try {
+      const preview = await g8.api.call(
+        "create_landing_page_preview_link_landing_pages__landing_page_id__preview_get",
+        { path: { landing_page_id: String(pageId) } }
+      );
+      previewUrl = preview.data?.url || preview.data?.preview_url || preview?.url || null;
+    } catch {
+      // Non-fatal: published url (or fallback) is enough.
+    }
+
+    const result = { id: pageId, page, url, previewUrl, cached: false, variant, mode: "real" };
     pageCache.set(key, result);
     return result;
   } catch (error) {

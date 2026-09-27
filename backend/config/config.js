@@ -40,6 +40,13 @@ export const recoveryListId = process.env.GRAPH8_RECOVERY_LIST_ID || null;
 export const recoveryListTitle =
   process.env.GRAPH8_RECOVERY_LIST_TITLE || "Signal Desk \u2014 Recovery";
 export const recoveryWorkflowId = process.env.GRAPH8_RECOVERY_WORKFLOW_ID || null;
+// When true, the backend may create a DRAFT recovery sequence (no contacts,
+// never run) if none is configured. Draft creation sends nothing.
+export const recoveryAutoProvision =
+  String(process.env.GRAPH8_RECOVERY_AUTO_PROVISION || "false").toLowerCase() === "true";
+// Optional override for the sequence owner email (required by POST /sequences).
+// When unset, the provisioner uses the first active mailbox email (read-only lookup).
+export const sequenceOwnerEmail = process.env.GRAPH8_SEQUENCE_OWNER_EMAIL || null;
 export const skillQualificationId =
   process.env.GRAPH8_SKILL_QUALIFICATION_ID || null;
 export const skillContactId = process.env.GRAPH8_SKILL_CONTACT_ID || null;

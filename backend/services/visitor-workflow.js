@@ -115,6 +115,18 @@ export async function processVisitorEvent(payload) {
   });
   const variant = `${personalizationVariant({ trafficType, industry: company?.industry })}:${copy.variant}`;
 
+  // Relevant Graph8 intent signals (read-only, best-effort — never blocks).
+  let signals = [];
+  if (companyDomain && graph8Configured) {
+    try {
+      const s = await g8.signals.company(companyDomain);
+      const rows = s?.signals || s?.data?.signals || [];
+      signals = Array.isArray(rows) ? rows.slice(0, 8) : [];
+    } catch {
+      // Missing intent:read scope etc. — enrichment above is enough.
+    }
+  }
+
   let landingPage = null;
   if (company?.companyName && trafficType !== "low_intent" && trafficType !== "unknown") {
     landingPage = await generateDynamicLandingPage(
@@ -135,7 +147,8 @@ export async function processVisitorEvent(payload) {
     visitor: v.contactId ? { contactId: v.contactId } : null,
     metadata: {
       intentScore, intentLevel: intentLevel(intentScore), trafficType,
-      variant, pageUrl: landingPage?.url || null, idempotencyKey: key,
+      variant, family: copy.family, reason: copy.reason, signals,
+      pageUrl: landingPage?.url || null, idempotencyKey: key,
     },
   });
 
@@ -189,7 +202,7 @@ export async function processVisitorEvent(payload) {
     contact_id: v.contactId,
     company_id: v.companyId,
     company: company ? { name: company.companyName, domain: company.domain, industry: company.industry } : null,
-    experience: { variant, headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: landingPage?.url || null },
+    experience: { variant, family: copy.family, reason: copy.reason, signals, headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: landingPage?.url || null },
     landing_page: landingPage,
     recovery: {
       eligible: recovery.eligible,
