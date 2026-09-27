@@ -300,6 +300,39 @@ code { padding: 1px 4px; border-radius: 4px; background: #f0f3f1; color: #52615c
 .experience-footer a { color: var(--accent-dark); font-weight: 700; text-decoration: none; }
 .visitor-experience-list { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
 
+/* Booking dialog (visitor-facing scheduling). */
+.booking-open { border: 0; background: transparent; cursor: pointer; }
+.booking-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; background: rgb(27 52 43 / 45%); overflow-y: auto; }
+.booking-dialog { width: 100%; max-width: 560px; padding: 24px; border-radius: 12px; background: #fff; box-shadow: 0 24px 60px rgb(0 0 0 / 25%); }
+.booking-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.booking-header h2 { margin: 2px 0 0; font-size: 20px; }
+.booking-close { border: 1px solid var(--line); border-radius: 7px; background: #fff; padding: 6px; cursor: pointer; color: var(--muted); }
+.booking-label { display: flex; align-items: center; gap: 6px; margin: 14px 0 7px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--faint); }
+.booking-dialog select, .booking-fields input { width: 100%; padding: 10px 12px; border: 1px solid #dce4df; border-radius: 7px; font: inherit; font-size: 13px; background: #fff; }
+.booking-hint { color: var(--muted); font-size: 12px; }
+.booking-error { color: var(--danger); font-size: 12px; }
+.booking-days { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.booking-day { min-width: 52px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 6px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; font-size: 10px; color: var(--muted); }
+.booking-day strong { font-size: 15px; color: var(--ink); }
+.day-active { border-color: var(--accent); background: var(--accent-pale); }
+.booking-slots { display: flex; flex-wrap: wrap; gap: 7px; max-height: 150px; overflow-y: auto; }
+.booking-slot { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.slot-active { border-color: var(--accent); background: var(--accent); color: #fff; }
+.booking-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.booking-confirm { margin-top: 18px; border: 0; cursor: pointer; width: 100%; justify-content: center; }
+.booking-confirm:disabled { opacity: 0.55; cursor: not-allowed; }
+.booking-mode-note { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.booking-success { text-align: left; }
+.booking-success-icon { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; color: var(--success); background: var(--success-pale); margin-bottom: 10px; }
+.booking-success h3 { margin: 0 0 4px; font-size: 18px; }
+.booking-success p { margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.booking-success .experience-cta { margin-top: 12px; }
+
+@media (max-width: 760px) {
+  .booking-fields { grid-template-columns: 1fr; }
+  .booking-overlay { padding: 20px 12px; }
+}
+
 @media (max-width: 760px) {
   .experience-topbar { padding: 0 16px; }
   .experience-main { padding: 24px 16px; }

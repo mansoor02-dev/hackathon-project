@@ -11,6 +11,22 @@ async function request(path, { signal } = {}) {
   return body;
 }
 
+async function postJson(path, payload, { signal } = {}) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(body?.error || `Request failed (${response.status})`);
+  }
+
+  return body;
+}
+
 export function getHealth(options) {
   return request("/health", options);
 }
@@ -46,4 +62,22 @@ export function getInboxStatus(options) {
 
 export function getAnalytics(options) {
   return request("/api/analytics", options);
+}
+
+export function getMeetingEventTypes(options) {
+  return request("/api/meeting/event-types", options);
+}
+
+export function getMeetingSlots({ eventTypeId, start, end, timeZone } = {}, options) {
+  const params = new URLSearchParams({
+    event_type_id: String(eventTypeId),
+    start,
+    end,
+  });
+  if (timeZone) params.set("time_zone", timeZone);
+  return request(`/api/meeting/slots?${params.toString()}`, options);
+}
+
+export function requestMeeting(payload, options) {
+  return postJson("/api/meetings/request", payload, options);
 }

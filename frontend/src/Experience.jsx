@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Building2, CalendarCheck, Sparkles } from "lucide-react";
-import { resolveVisitor } from "./api.js";
+import { ArrowUpRight, Building2, CalendarCheck, CalendarDays, Check, Clock3, Sparkles, X } from "lucide-react";
+import { resolveVisitor, getMeetingEventTypes, getMeetingSlots, requestMeeting } from "./api.js";
 
 function domainFromUrl() {
   try {
@@ -10,12 +10,210 @@ function domainFromUrl() {
   }
 }
 
+function nextDays(count = 14) {
+  const days = [];
+  const now = new Date();
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+
+function dayBounds(day) {
+  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0);
+  const end = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function formatTime(iso) {
+  try {
+    return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+function BookingDialog({ company, companyDomain, onClose }) {
+  const [types, setTypes] = useState({ status: "loading", data: [], error: null, liveBooking: false });
+  const [typeId, setTypeId] = useState(null);
+  const [day, setDay] = useState(() => nextDays()[0]);
+  const [slots, setSlots] = useState({ status: "idle", data: [], error: null });
+  const [slot, setSlot] = useState(null);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [booking, setBooking] = useState({ status: "idle", data: null, error: null });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getMeetingEventTypes({ signal: controller.signal })
+      .then((data) => {
+        const list = data.event_types || [];
+        setTypes({ status: "success", data: list, error: null, liveBooking: data.liveBooking === true });
+        if (list.length > 0) setTypeId(list[0].id);
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setTypes({ status: "error", data: [], error: error.message, liveBooking: false });
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (typeId == null || !day) return;
+    const controller = new AbortController();
+    setSlots({ status: "loading", data: [], error: null });
+    setSlot(null);
+    const { start, end } = dayBounds(day);
+    getMeetingSlots(
+      { eventTypeId: typeId, start, end, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+      { signal: controller.signal }
+    )
+      .then((data) => {
+        const key = Object.keys(data.slots || {}).find((k) => k.startsWith(day.toISOString().slice(0, 10)));
+        const list = (key && data.slots[key]) || Object.values(data.slots || {}).flat();
+        setSlots({ status: "success", data: list, error: null });
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setSlots({ status: "error", data: [], error: error.message });
+      });
+    return () => controller.abort();
+  }, [typeId, day]);
+
+  async function confirm(e) {
+    e.preventDefault();
+    setBooking({ status: "loading", data: null, error: null });
+    try {
+      const data = await requestMeeting({
+        event_type_id: typeId,
+        slot,
+        name,
+        email,
+        company: company || null,
+        domain: companyDomain || null,
+      });
+      setBooking({ status: "success", data, error: null });
+    } catch (error) {
+      setBooking({ status: "error", data: null, error: error.message });
+    }
+  }
+
+  const days = nextDays();
+  const chosenType = types.data.find((t) => Number(t.id) === Number(typeId)) || null;
+
+  return (
+    <div className="booking-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Book a meeting">
+      <div className="booking-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="booking-header">
+          <div>
+            <p className="eyebrow">SCHEDULE</p>
+            <h2>Book a meeting</h2>
+          </div>
+          <button className="booking-close" onClick={onClose} aria-label="Close booking dialog"><X size={17} /></button>
+        </div>
+
+        {booking.status === "success" ? (
+          <div className="booking-success">
+            <span className="booking-success-icon"><Check size={20} /></span>
+            <h3>{booking.data.title || "Meeting requested"}</h3>
+            <p>{booking.data.scheduledAt ? new Date(booking.data.scheduledAt).toLocaleString() : ""}</p>
+            <p className="booking-mode-note">
+              {booking.data.mode === "LIVE"
+                ? "Live Graph8 booking — calendar invitation sent."
+                : "Demo booking — recorded for this demo, no calendar invitation sent."}
+            </p>
+            <a className="experience-cta" href="/dashboard">View in dashboard <ArrowUpRight size={16} /></a>
+          </div>
+        ) : (
+          <form onSubmit={confirm}>
+            <label className="booking-label" htmlFor="booking-type">Meeting type</label>
+            {types.status === "loading" && <p className="booking-hint">Loading live meeting types…</p>}
+            {types.status === "error" && <p className="booking-error">Could not load meeting types: {types.error}</p>}
+            {types.status === "success" && types.data.length === 0 && (
+              <p className="booking-hint">No bookable meeting types are configured in Graph8.</p>
+            )}
+            {types.data.length > 0 && (
+              <select id="booking-type" value={typeId ?? ""} onChange={(e) => setTypeId(Number(e.target.value))}>
+                {types.data.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}{t.duration ? ` · ${t.duration} min` : ""}</option>
+                ))}
+              </select>
+            )}
+
+            <span className="booking-label"><CalendarDays size={13} /> Day</span>
+            <div className="booking-days">
+              {days.map((d) => (
+                <button
+                  type="button"
+                  key={d.toISOString()}
+                  className={`booking-day ${day && d.toDateString() === day.toDateString() ? "day-active" : ""}`}
+                  onClick={() => setDay(d)}
+                >
+                  <span>{d.toLocaleDateString(undefined, { weekday: "short" })}</span>
+                  <strong>{d.getDate()}</strong>
+                </button>
+              ))}
+            </div>
+
+            <span className="booking-label"><Clock3 size={13} /> Live availability</span>
+            {slots.status === "loading" && <p className="booking-hint">Checking live availability…</p>}
+            {slots.status === "error" && <p className="booking-error">Could not load slots: {slots.error}</p>}
+            {slots.status === "success" && slots.data.length === 0 && (
+              <p className="booking-hint">No open slots that day — try another day.</p>
+            )}
+            {slots.data.length > 0 && (
+              <div className="booking-slots">
+                {slots.data.map((s) => (
+                  <button
+                    type="button"
+                    key={s.slot_uid || s.time}
+                    className={`booking-slot ${slot === s.time ? "slot-active" : ""}`}
+                    onClick={() => setSlot(s.time)}
+                  >
+                    {formatTime(s.time)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="booking-fields">
+              <div>
+                <label className="booking-label" htmlFor="booking-name">Your name</label>
+                <input id="booking-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" autoComplete="name" />
+              </div>
+              <div>
+                <label className="booking-label" htmlFor="booking-email">Work email</label>
+                <input id="booking-email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ada@company.com" inputMode="email" autoComplete="email" />
+              </div>
+            </div>
+
+            {booking.status === "error" && <p className="booking-error">{booking.error}</p>}
+
+            <button
+              className="experience-cta booking-confirm"
+              type="submit"
+              disabled={typeId == null || !slot || !name.trim() || !email.trim() || booking.status === "loading"}
+            >
+              <CalendarCheck size={16} /> {booking.status === "loading" ? "Requesting…" : `Confirm${chosenType ? ` · ${chosenType.title}` : ""}`}
+            </button>
+            {!types.liveBooking && (
+              <p className="booking-mode-note">Demo scheduling — requests are recorded locally so the dashboard flow stays demonstrable. No calendar invitation is sent.</p>
+            )}
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Visitor-facing landing page. Backend is the source of truth:
 // all copy/variant/reason comes from GET /api/resolve-visitor.
 export default function Experience() {
   const [domainInput, setDomainInput] = useState(() => domainFromUrl());
   const [domain, setDomain] = useState(() => domainFromUrl());
   const [state, setState] = useState({ status: "loading", data: null, error: null });
+  const [bookingOpen, setBookingOpen] = useState(false);
 
   useEffect(() => {
     const onPop = () => {
@@ -135,9 +333,9 @@ export default function Experience() {
               <a className="experience-cta" href="/dashboard">
                 {cta} <ArrowUpRight size={16} />
               </a>
-              <a className="experience-secondary" href="/dashboard">
+              <button className="experience-secondary booking-open" onClick={() => setBookingOpen(true)}>
                 <CalendarCheck size={15} /> Book a meeting
-              </a>
+              </button>
             </div>
 
             {industry && (
@@ -171,6 +369,10 @@ export default function Experience() {
         <span>Signal Desk · visitor experience (backend is the source of truth)</span>
         <a href="/dashboard">Open internal dashboard</a>
       </footer>
+
+      {bookingOpen && (
+        <BookingDialog company={company} companyDomain={companyDomain} onClose={() => setBookingOpen(false)} />
+      )}
     </div>
   );
 }
