@@ -1,4 +1,4 @@
-import { g8, graph8Configured, intentThreshold } from "../config/config.js";
+import { g8, graph8Configured, intentThreshold, targetAccounts } from "../config/config.js";
 import { fetchCompanyDetails } from "./company-service.js";
 import { generateDynamicLandingPage } from "./landing-page-service.js";
 import { classifyTraffic, intentLevel, personalizationVariant } from "./traffic-classifier.js";
@@ -58,8 +58,22 @@ export async function processVisitorEvent(payload) {
   }
 
   const intentScore = v.intentScore;
+  let contact = null;
+  if (intentScore < intentThreshold && targetAccounts.length && v.contactId && graph8Configured) {
+    try {
+      contact = await g8.contacts.get(Number(v.contactId));
+    } catch (error) {
+      console.warn(`[VISITOR] Could not retrieve contact ${v.contactId}:`, error.message);
+    }
+  }
 
-  if (intentScore < intentThreshold) {
+  const initialTrafficType = classifyTraffic({
+    intentScore,
+    domain: contact?.company_domain || contact?.company?.domain || v.companyDomain,
+    companyName: contact?.company_name || contact?.company?.name || v.companyName,
+  });
+
+  if (intentScore < intentThreshold && initialTrafficType !== "target_account") {
     recordEvent("visitor_identified", {
       company: v.companyName, domain: v.companyDomain,
       metadata: { intentScore, trafficType: "low_intent", idempotencyKey: key },
@@ -68,8 +82,7 @@ export async function processVisitorEvent(payload) {
     return { status: "low_intent", intent_score: intentScore, threshold: intentThreshold };
   }
 
-  let contact = null;
-  if (v.contactId && graph8Configured) {
+  if (!contact && v.contactId && graph8Configured) {
     try {
       contact = await g8.contacts.get(Number(v.contactId));
     } catch (error) {
