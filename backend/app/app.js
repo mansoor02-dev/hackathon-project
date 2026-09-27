@@ -10,7 +10,7 @@ const app = express();
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type,X-G8-Signature,X-Studio-Signature,X-G8-Timestamp,X-Studio-Timestamp");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type,X-G8-Signature,X-Studio-Signature,X-G8-Timestamp,X-Studio-Timestamp,ngrok-skip-browser-warning");
   next();
 });
 app.use((req, res, next) => {

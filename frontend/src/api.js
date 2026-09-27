@@ -1,7 +1,10 @@
 const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const apiHeaders = baseUrl.includes(".ngrok")
+  ? { "ngrok-skip-browser-warning": "true" }
+  : {};
 
 async function request(path, { signal } = {}) {
-  const response = await fetch(`${baseUrl}${path}`, { signal });
+  const response = await fetch(`${baseUrl}${path}`, { headers: apiHeaders, signal });
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -14,7 +17,7 @@ async function request(path, { signal } = {}) {
 async function postJson(path, payload, { signal } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...apiHeaders },
     body: JSON.stringify(payload),
     signal,
   });
