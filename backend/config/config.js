@@ -32,6 +32,34 @@ export const targetAccounts = String(process.env.GRAPH8_TARGET_ACCOUNTS || "")
 
 export const graph8BaseUrl = process.env.GRAPH8_BASE_URL || "https://be.graph8.com/api/v1";
 
+// --- Signal Desk recovery / sequencer configuration (all server-only) ---
+export const recoverySequenceId = process.env.GRAPH8_RECOVERY_SEQUENCE_ID || null;
+export const recoveryAutoEnroll =
+  String(process.env.GRAPH8_RECOVERY_AUTO_ENROLL || "false").toLowerCase() === "true";
+export const recoveryListId = process.env.GRAPH8_RECOVERY_LIST_ID || null;
+export const recoveryListTitle =
+  process.env.GRAPH8_RECOVERY_LIST_TITLE || "Signal Desk \u2014 Recovery";
+export const recoveryWorkflowId = process.env.GRAPH8_RECOVERY_WORKFLOW_ID || null;
+export const skillQualificationId =
+  process.env.GRAPH8_SKILL_QUALIFICATION_ID || null;
+export const skillContactId = process.env.GRAPH8_SKILL_CONTACT_ID || null;
+export const skillOutreachId = process.env.GRAPH8_SKILL_OUTREACH_ID || null;
+
+export function recoveryStatus() {
+  return {
+    sequenceConfigured: Boolean(recoverySequenceId),
+    autoEnroll: recoveryAutoEnroll,
+    listConfigured: Boolean(recoveryListId),
+    listTitle: recoveryListTitle,
+    workflowConfigured: Boolean(recoveryWorkflowId),
+    mode: !recoverySequenceId
+      ? "NOT_CONFIGURED"
+      : recoveryAutoEnroll
+        ? "LIVE"
+        : "DRY_RUN",
+  };
+}
+
 export async function checkGraph8Api() {
   if (!graph8Configured) {
     const err = new Error("Graph8 API key not configured");

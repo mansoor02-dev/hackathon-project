@@ -1,6 +1,7 @@
 import express from "express";
 import graph8Webhooks from "../routes/graph8-webhooks.js";
 import visitorRoutes from "../routes/visitor.js";
+import recoveryRoutes from "../routes/recovery.js";
 
 const app = express();
 
@@ -26,6 +27,7 @@ app.use(
 
 app.use("/webhooks/graph8", graph8Webhooks);
 app.use("/api", visitorRoutes);
+app.use("/api", recoveryRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "graph8-ghost-ops" });

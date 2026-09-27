@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { resolveVisitor } from "../services/visitor-resolution-service.js";
-import { checkGraph8Api, graph8Configured } from "../config/config.js";
+import { checkGraph8Api, graph8Configured, recoveryStatus } from "../config/config.js";
 import { listEvents, getLatestMeeting, getLatestCoaching, getLatestVisitor } from "../services/event-store.js";
+import { listOpportunities } from "../services/recovery/store.js";
+import { sequenceStatus } from "../services/graph8/sequences-service.js";
 import { voiceStatus } from "../services/voice-coaching-service.js";
 
 const router = Router();
@@ -44,12 +46,24 @@ router.get("/events", (req, res) => {
 });
 
 router.get("/state", (_req, res) => {
+  const recovery = listOpportunities().slice(0, 20);
+  const events = listEvents(500);
   return res.json({
     visitor: getLatestVisitor(),
     meeting: getLatestMeeting(),
     coaching: getLatestCoaching(),
     voice: voiceStatus(),
     graph8: { configured: graph8Configured },
+    recovery: {
+      opportunities: recovery,
+      counts: {
+        total: recovery.length,
+        enrolled: events.filter((e) => e.type === "recovery_enrolled").length,
+        replies: events.filter((e) => e.type === "reply_received").length,
+      },
+      sequence: sequenceStatus(),
+      recoveryConfig: recoveryStatus(),
+    },
   });
 });
 

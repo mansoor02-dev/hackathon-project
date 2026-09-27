@@ -154,7 +154,11 @@ const meetingPath = "/webhooks/graph8/appointments/booked";
 }
 {
   const r = await postWebhook(meetingPath, { event: "meeting.cancelled", data: { contact_id: "x" } });
-  record("meeting: non-booked event -> 200 ignored", r.status === 200 && r.json?.status === "ignored", JSON.stringify(r.json));
+  record("meeting: cancelled handled (re-opens recovery), not ignored", r.status === 200 && r.json?.status === "meeting_cancelled", JSON.stringify(r.json));
+}
+{
+  const r = await postWebhook(meetingPath, { event: "deal.won", data: {} });
+  record("meeting: truly unknown event -> 200 ignored", r.status === 200 && r.json?.status === "ignored", JSON.stringify(r.json));
 }
 {
   const r = await postWebhook(meetingPath, { event: "meeting.booked", data: { meeting_id: "m1" } });
@@ -198,6 +202,8 @@ const origEnrichCompany = g8.enrich.company;
 const origApiCall = g8.api.call.bind(g8.api);
 {
   // FLOW A: high intent -> enrich -> create+publish landing page (all mocked)
+  // Unique contact id per run so file-backed idempotency never collides.
+  const uid = Date.now() % 1000000;
   const calls = [];
   g8.contacts.get = async (id) => ({ id, company_domain: "acme.com", first_name: "Ada", last_name: "Lovelace" });
   g8.enrich.company = async () => ({ name: "Acme Corp", domain: "acme.com", industry: "SaaS", tech_stack: ["React"] });
@@ -207,7 +213,7 @@ const origApiCall = g8.api.call.bind(g8.api);
     if (opId === "publish_landing_page_landing_pages__landing_page_id__publish_post") return { data: { url: "https://example.com/p/page_123" } };
     throw new Error("unexpected api.call " + opId);
   };
-  const res = await processVisitorEvent({ event: "visitor.identified", data: { intent_score: 90, contact_id: 42, company_id: 7 } });
+  const res = await processVisitorEvent({ id: `evt-flow-a-${uid}`, event: "visitor.identified", data: { intent_score: 90, contact_id: 42000 + (uid % 1000), company_id: 7 } });
   const ok = res.status === "acknowledged" && res.landing_page?.id === "page_123" &&
     calls.some((c) => c.opId === "create_landing_page_landing_pages_post") &&
     calls.some((c) => c.opId === "publish_landing_page_landing_pages__landing_page_id__publish_post");
@@ -219,6 +225,7 @@ const origApiCall = g8.api.call.bind(g8.api);
 }
 {
   // FLOW C: meeting booked -> contact -> enrich -> coaching script (all mocked)
+  const uid = Date.now() % 1000000;
   const calls = [];
   g8.contacts.get = async (id) => ({ id, name: "Jane Doe", email: "jane@acme.com", job_title: "VP Sales", company_domain: "acme.com" });
   g8.enrich.company = async () => ({ name: "Acme Corp", domain: "acme.com", industry: "SaaS", tech_stack: [] });
@@ -226,7 +233,7 @@ const origApiCall = g8.api.call.bind(g8.api);
     calls.push({ opId, args });
     return { data: { script: "mock coaching script" } };
   };
-  const res = await processMeetingEvent({ event: "meeting.booked", data: { contact_id: "99", meeting_id: "m-1", meeting_title: "Demo" } });
+  const res = await processMeetingEvent({ event: "meeting.booked", data: { contact_id: `99${uid % 1000}`, meeting_id: `m-1-${uid}`, meeting_title: "Demo" } });
   // Webhook acknowledges fast; coaching resolves async. Drain the async tick
   // BEFORE restoring mocks so no real API call escapes the mocked window.
   await new Promise((r) => setImmediate(r));

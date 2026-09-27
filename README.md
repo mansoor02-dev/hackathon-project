@@ -1,10 +1,37 @@
-# Signal Desk — B2B Website Personalization on Graph8
+# Signal Desk — turns anonymous B2B website traffic into an automated revenue workflow
 
-Anonymous visitor → Graph8 visitor intelligence → traffic/intent classification →
-personalization decision → Graph8 landing-page personalization → personalized
-experience → meeting booking (Graph8 Calendar) → webhook → backend → AI sales prep.
-The dashboard (`frontend`) is an internal operator view; it is not the
-visitor-facing experience.
+Anonymous visitor → Graph8 identifies visitor/company → company + intent +
+activity signals → traffic qualification → personalized landing experience →
+form/calendar → meeting booked (meeting workflow) OR no meeting (inbound →
+outbound recovery: find contact → enrich → verify email → Graph8 Sequence →
+reply/meeting). The dashboard (`frontend`) is an internal operator view; it is
+not the visitor-facing experience.
+
+```
+Visitor
+  ↓
+Graph8 identification
+  ↓
+Company + intent
+  ↓
+Personalized experience
+  ↓
+Meeting?
+  ├── YES → conversion flow (meeting workflow + AI sales prep)
+  └── NO
+       ↓
+   Recovery opportunity
+       ↓
+   Contact discovery
+       ↓
+   Enrichment
+       ↓
+   Email verification
+       ↓
+   Graph8 Sequencer
+       ↓
+   Reply / Meeting
+```
 
 ## Architecture
 
@@ -13,13 +40,20 @@ visitor -> Graph8 signals -> Express backend -> classification
   -> Graph8 landing pages (create + publish, cached per domain+variant)
   -> personalized experience -> Graph8 Calendar booking
   -> webhook (ngrok) -> Express -> enrichment -> AI sales prep
-  -> dashboard (React) reads /api/state + /api/events
+  -> recovery pipeline (no meeting): discovery -> enrich -> verify
+  -> Graph8 Sequencer (owns timing) -> inbox replies
+  -> dashboard (React) reads /api/state + /api/events + /api/recovery
 ```
 
 - `backend/` — Node + Express. Never exposes `G8_API_KEY` / webhook secret.
-- `frontend/` — React + Vite dashboard (preserved design, wired to real data).
+  Graph8 calls isolated in `services/graph8/`; business logic in
+  `services/recovery/`, `services/visitor-workflow.js`,
+  `services/meeting-workflow.js`, `services/engagement-workflow.js`.
+- `frontend/` — React + Vite dashboard (preserved design, extended with
+  Recovery + Sequence & replies panels, wired to real data).
 - Graph8 access via `@graph8/sdk` v0.245.0 (typed clients + verified
-  `g8.api.call(...)` operation IDs, never invented).
+  `g8.api.call(...)` operation IDs, never invented; SDK wins over docs
+  on any disagreement).
 
 ## Local setup
 
@@ -39,7 +73,12 @@ Backend (see `backend/.env.example`): `PORT`, `G8_API_KEY` (server-only),
 `GRAPH8_BASE_URL`, `GRAPH8_WEBHOOK_SECRET` (server-only),
 `GRAPH8_PAGE_TEMPLATE`, `GRAPH8_TARGET_ACCOUNTS` (comma-separated, optional),
 `GRAPH8_INTENT_THRESHOLD` (default 60, medium threshold fixed at 40),
-`GRAPH8_VOICE_AGENT_ID` (optional; unset = labelled simulation).
+`GRAPH8_VOICE_AGENT_ID` (optional; unset = labelled simulation),
+`GRAPH8_RECOVERY_SEQUENCE_ID` (optional; unset = "Sequence not configured"),
+`GRAPH8_RECOVERY_AUTO_ENROLL` (default `false`; only `true` enrolls real contacts),
+`GRAPH8_RECOVERY_LIST_ID` / `GRAPH8_RECOVERY_LIST_TITLE` (recovery segmentation),
+`GRAPH8_RECOVERY_WORKFLOW_ID` (optional), `GRAPH8_SKILL_QUALIFICATION_ID` /
+`GRAPH8_SKILL_CONTACT_ID` / `GRAPH8_SKILL_OUTREACH_ID` (optional).
 
 Frontend (`frontend/.env.local`): `BACKEND_PROXY_TARGET=http://127.0.0.1:3000`,
 `VITE_API_BASE_URL=` (empty = same origin, via dev proxy). No secrets in Vite env.
@@ -56,9 +95,12 @@ Frontend (`frontend/.env.local`): `BACKEND_PROXY_TARGET=http://127.0.0.1:3000`,
 ## Webhook setup
 
 Subscribe (in Graph8) `visitor.identified` (+`intent.signal`) to
-`{PUBLIC}/webhooks/graph8/signals/visitor` and `meeting.booked` to
-`{PUBLIC}/webhooks/graph8/appointments/booked`. Verification uses the raw body
-(`X-G8-Signature`, optional `X-G8-Timestamp`, 300 s tolerance):
+`{PUBLIC}/webhooks/graph8/signals/visitor`, `meeting.booked`
+(+`meeting.cancelled`/`meeting.rescheduled`) to
+`{PUBLIC}/webhooks/graph8/appointments/booked`, and reply/sequence/form
+events (`engagement.email_replied`, `sequence.contact_enrolled`,
+`form.submitted`) to `{PUBLIC}/webhooks/graph8/engagement`. Verification uses
+the raw body (`X-G8-Signature`, optional `X-G8-Timestamp`, 300 s tolerance):
 missing/invalid/tampered → 401; malformed signed JSON → 400; unknown event → 200 ignored.
 
 ## Ngrok setup
@@ -85,13 +127,107 @@ ngrok http 3000
 
 ```bash
 cd backend && node server.js &
-node tests/backend-test.mjs   # 28 checks: auth, webhooks, real read-only API, mocked flows
+node tests/backend-test.mjs    # 29 checks: auth, webhooks, real read-only API, mocked flows
+node tests/recovery-test.mjs   # 25 checks: qualification, pipeline, idempotency, safety, endpoints
 ```
 
-Covers: health, resolve-visitor (+domain fallback), graph8 status, events/state,
-401s, tampered body, malformed JSON, unknown events, missing intent, low/high
-intent, idempotent redelivery, meeting validation, real `contacts.list`,
-SDK operation existence, mocked landing-page + coaching flows.
+Backend suite covers: health, resolve-visitor (+domain fallback), graph8
+status, events/state, 401s, tampered body, malformed JSON, unknown events,
+missing intent, low/high intent, idempotent redelivery, meeting validation +
+cancellation/reschedule, real `contacts.list`, SDK operation existence,
+mocked landing-page + coaching flows.
+
+Recovery suite covers: eligible / not eligible (low intent, missing intent,
+missing company, meeting booked, no engagement), discovery → enrichment →
+verification pipeline, repeated processing (no duplicates), meeting re-check
+(cancel/skip), no-contact task fallback, email unavailable/verification
+failure, already-enrolled guard, sequence unavailable/API failure, reply +
+sequence-enrollment + form webhooks, and the HTTP endpoints below. All
+Graph8 calls are mocked; tests never enroll real contacts, send emails/SMS,
+or execute live workflows.
+
+## Recovery flow (inbound → outbound)
+
+Eligible when: high-intent (`high_intent`/`target_account`) company +
+meaningful engagement (personalization served) + NO meeting booked.
+
+```
+identified → recovery candidate → contact found → enriched → verified →
+ready for outreach → enrolled
+```
+
+1. `POST /webhooks/graph8/signals/visitor` (high intent) creates the
+   opportunity (`recovery_created` event).
+2. `POST /api/recovery/:domain/process` runs the pipeline:
+   `companies.contacts` → `enrich.search`/`search.contacts` (discovery) →
+   `enrich.person` only when fields are missing (1 credit saved otherwise) →
+   `enrich.verifyEmail` gate → `lists` segmentation (`Signal Desk — Recovery`,
+   found-or-created once) → re-check meeting → Sequencer.
+3. `meeting.booked` cancels recovery for the account; `meeting.cancelled`
+   re-opens it.
+4. Idempotency: persistent `backend/data/recovery.json` + Graph8
+   `idempotencyKey` on `sequences.add` → a contact is never enrolled twice;
+   repeated webhooks return `duplicate`.
+
+## Sequencer configuration & dry-run mode
+
+```env
+GRAPH8_RECOVERY_SEQUENCE_ID=
+GRAPH8_RECOVERY_AUTO_ENROLL=false
+```
+
+- Sequence missing → recovery still displayed, status `ready_no_sequence`
+  ("Sequence not configured").
+- `AUTO_ENROLL=false` (default) → `ready_for_sequence` ("Ready for Sequence",
+  would enroll into "Inbound Recovery"). Nothing is sent.
+- `AUTO_ENROLL=true` + sequence id → real `g8.sequences.add` with
+  idempotency key. Only enable deliberately; never in tests.
+
+Use an existing configured sequence; the backend never assumes Day 0/3/5/7
+channels exist in the workspace. `GET /api/sequences/status` shows the honest
+mode (`LIVE` / `DRY_RUN` / `NOT_CONFIGURED`).
+
+## Graph8 capabilities used
+
+(All verified against the installed `@graph8/sdk@0.245.0`; no invented APIs.)
+
+- Visitor: `visitor.identified` / `intent.signal` webhooks, `contacts.get`,
+  `signals.company`, `enrich.company` (lookup-first: `companies.list` →
+  `enrich.company` only when fields missing).
+- Company: `companies.list`/`get`/`contacts`, `enrich.company`.
+- Personalization: `create_landing_page…` + `publish_landing_page…`
+  (cached per template+domain+variant; deterministic app-side copy).
+- Meetings: `meeting.booked`/`cancelled`/`rescheduled` webhooks; booking
+  stops recovery, cancellation re-opens it.
+- Recovery: `enrich.search` / `search.contacts` (discovery),
+  `enrich.person` (conditional), `enrich.verifyEmail` (gate),
+  `lists` (segmentation), `sequences.get`/`preview`/`add` with idempotency
+  (Sequencer owns timing), `tasks` fallback (no silent failures),
+  `inbox.list`/`draft` (reply visibility, review-only).
+- Voice: `generate_call_script…` when `GRAPH8_VOICE_AGENT_ID` is set.
+- Analytics: `intent.stats` (Graph8) alongside labelled app metrics.
+
+## Graph8 capabilities intentionally NOT used
+
+- Forms (`g8.forms` is a write-key browser helper; no server equivalent fits
+  the existing UI — not forced in).
+- Deals/pipelines, campaigns, custom fields, voice dialing: investigated,
+  left out to keep the core flow reliable for the hackathon.
+- Workflows & Skills: wired as **optional** integrations
+  (`GRAPH8_RECOVERY_WORKFLOW_ID`, `GRAPH8_SKILL_*_ID`; validate-before-execute,
+  never executed in tests). The core recovery flow does not depend on them.
+
+## Dashboard lifecycle
+
+```
+INBOUND: visitors identified, high-intent accounts, personalized sessions, meetings booked
+RECOVERY: opportunities, contacts found, enriched, emails verified, ready for outreach, enrolled
+OUTBOUND: sequence status, replies, meetings, tasks
+```
+
+Per account: company, domain, intent, last activity, personalization,
+meeting status, recovery (eligible? contact? verification? sequence?
+enrollment?), timeline.
 
 ## Demo procedure
 
@@ -100,9 +236,26 @@ SDK operation existence, mocked landing-page + coaching flows.
    `/api/resolve-visitor?domain=<customer-domain>` for the enrichment path).
 3. Dashboard shows company, traffic type, intent, variant.
 4. Visitor sees personalized headline/CTA; Graph8 page reused via cache.
-5. Book via Graph8 Calendar → webhook → dashboard records meeting + prep.
-6. With `GRAPH8_VOICE_AGENT_ID`: real voice script; without: labelled simulation.
-7. Fallback: unknown visitor → generic page, no crash.
+5. High-intent + engagement + no meeting → recovery opportunity appears
+   (`GET /api/recovery`).
+6. `POST /api/recovery/:domain/process` → contact → enriched → verified →
+   "Ready for Sequence" (dry-run) or enrolled (live, if enabled).
+7. Book via Graph8 Calendar → webhook → dashboard records meeting + prep,
+   recovery cancelled for the account.
+8. With `GRAPH8_VOICE_AGENT_ID`: real voice script; without: labelled simulation.
+9. Fallback: unknown visitor → generic page, no crash; no contact →
+   Graph8 task, never silent.
+
+## Which parts are real vs mocked
+
+- `LIVE`: any path backed by a verified `g8.*` call with credentials
+  (contacts, enrichment, sequences, lists, tasks, inbox, landing pages, voice).
+- `SIMULATED`: voice prep without agent id; clearly labelled in UI/events.
+- `MOCKED`: test-only stubs inside `tests/` (never touch the real API).
+- `NOT_CONFIGURED`: sequence/workflow/skills/list paths without their env
+  ids — displayed honestly, never faked.
+- Metrics are labelled `graph8` / `app` / `demo` (`GET /api/analytics`).
+  Nothing is fabricated.
 
 ## Simulated when credentials are unavailable
 

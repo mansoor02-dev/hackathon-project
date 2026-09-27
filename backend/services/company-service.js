@@ -31,22 +31,75 @@ export function normalizeCompany(raw, fallbackDomain = null) {
   };
 }
 
+// Lookup-first company intelligence:
+//   1. lookup via CRM (companies.list filtered by domain) — free, no credits
+//   2. only if important fields are missing -> enrich.company (billable, 1 credit)
+// Verified SDK: g8.companies.list(params), g8.companies.get(id),
+// g8.companies.contacts(id), g8.enrich.company({domain}).
+function isImportantMissing(c) {
+  if (!c) return true;
+  return !c.companyName || !c.industry;
+}
+
+export async function lookupCompany(domain) {
+  if (!domain || !graph8Configured) return { found: false, data: null };
+  try {
+    const res = await g8.companies.list({ domain, limit: 1 });
+    const rows = res?.data || res?.companies || (Array.isArray(res) ? res : []);
+    const hit = Array.isArray(rows) ? rows[0] : null;
+    if (!hit) return { found: false, data: null };
+    return {
+      found: true,
+      source: "lookup",
+      companyId: hit.id ?? hit.company_id ?? null,
+      data: normalizeCompany(hit, domain),
+    };
+  } catch (error) {
+    console.warn(`[COMPANY] lookup failed for ${domain}:`, error.message);
+    return { found: false, error: error.message, data: null };
+  }
+}
+
 export async function fetchCompanyDetails(domain) {
   if (!domain) return { found: false, data: null };
   if (!graph8Configured) {
     return { found: false, notConfigured: true, data: null, domain };
   }
+  // Step 1: cheap CRM lookup.
+  const lookedUp = await lookupCompany(domain);
+  if (lookedUp.found && !isImportantMissing(lookedUp.data)) {
+    return { ...lookedUp, source: "lookup" };
+  }
+  // Step 2: billable enrichment only when something important is missing.
   try {
     const result = await g8.enrich.company({ domain });
-    return { found: true, data: normalizeCompany(result, domain) };
+    return {
+      found: true,
+      source: lookedUp.found ? "lookup+enrichment" : "enrichment",
+      companyId: lookedUp.companyId || null,
+      data: normalizeCompany(result, domain),
+    };
   } catch (error) {
     const status = error?.status || error?.response?.status;
     console.warn(`[ENRICH] Failed for ${domain}:`, error.message);
+    if (lookedUp.found) return { ...lookedUp, enrichmentError: error.message };
     return {
       found: false,
       error: error.message,
       rateLimited: status === 429,
       data: normalizeCompany(null, domain),
     };
+  }
+}
+
+export async function fetchCompanyContacts(companyId, limit = 10) {
+  if (!companyId || !graph8Configured) return [];
+  try {
+    const res = await g8.companies.contacts(companyId, limit);
+    const rows = res?.data || res?.contacts || (Array.isArray(res) ? res : []);
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    console.warn(`[COMPANY] contacts failed for ${companyId}:`, error.message);
+    return [];
   }
 }

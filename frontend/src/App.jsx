@@ -20,7 +20,7 @@ import {
   UsersRound,
   Workflow,
 } from "lucide-react";
-import { getHealth, resolveVisitor, getGraph8Status, getDashboardState, getEvents } from "./api.js";
+import { getHealth, resolveVisitor, getGraph8Status, getDashboardState, getEvents, getRecovery, getSequenceStatus, getInboxStatus } from "./api.js";
 
 const initialResource = { status: "loading", data: null, error: null, checkedAt: null };
 
@@ -339,6 +339,57 @@ function CoachPanel({ coaching, voice }) {
   );
 }
 
+function RecoveryPanel({ recovery, sequence }) {
+  const opps = recovery?.opportunities || recovery?.data?.opportunities || [];
+  const counts = recovery?.counts || {};
+  const seqMode = sequence?.mode || recovery?.sequence?.mode || "NOT_CONFIGURED";
+  return (
+    <section className="panel compact-panel">
+      <SectionTitle icon={UsersRound} eyebrow="INBOUND → OUTBOUND" title="Recovery" action={<span className="timeline-count">{counts.total ?? opps.length ?? 0} opportunities</span>} />
+      {opps.length === 0 ? (
+        <div className="empty-state">
+          <span className="empty-icon"><CircleDashed size={20} strokeWidth={1.7} /></span>
+          <div><strong>No recovery opportunities yet</strong><p>High-intent accounts with engagement and no meeting will appear here. Sequence: {seqMode === "NOT_CONFIGURED" ? "Not configured" : seqMode}.</p></div>
+        </div>
+      ) : (
+        <div className="status-list">
+          {opps.slice(0, 5).map((o) => (
+            <div className="status-row" key={o.domain}>
+              <span className="row-icon"><Building2 size={15} /></span>
+              <div><strong>{o.company || o.domain}</strong><span>{o.domain} · intent {o.intentScore ?? "—"} · {o.status}{o.contact?.email ? ` · ${o.contact.email}` : ""}{o.verification ? ` · ${o.verification.state}` : ""}</span></div>
+              <span className={`row-status ${o.status === "enrolled" ? "text-success" : "text-muted"}`}>{o.status === "ready_for_sequence" ? "Ready for Sequence" : o.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="panel-footnote">Sequencer owns timing. {seqMode === "DRY_RUN" ? "Dry-run: contacts show Ready for Sequence, nothing is enrolled." : seqMode === "LIVE" ? "Live: eligible contacts enroll into the configured sequence." : "Set GRAPH8_RECOVERY_SEQUENCE_ID to enable outreach."}</p>
+    </section>
+  );
+}
+
+function OutboundPanel({ sequence, inbox }) {
+  const seqMode = sequence?.mode || "NOT_CONFIGURED";
+  const replies = inbox?.replies || [];
+  return (
+    <section className="panel compact-panel">
+      <SectionTitle icon={Workflow} eyebrow="OUTBOUND" title="Sequence & replies" />
+      <div className="status-list">
+        <div className="status-row">
+          <span className="row-icon"><Radio size={15} /></span>
+          <div><strong>Sequence status</strong><span>{sequence?.sequenceId ? `ID ${sequence.sequenceId}` : "No sequence configured"} · {seqMode}</span></div>
+          <span className="row-status text-muted">{seqMode}</span>
+        </div>
+        <div className="status-row">
+          <span className="row-icon"><Check size={15} /></span>
+          <div><strong>Replies</strong><span>{replies.length === 0 ? "No replies recorded yet (draft/review only, never auto-sent)" : `${replies.length} replies visible`}</span></div>
+          <span className="row-status text-muted">{replies.length}</span>
+        </div>
+      </div>
+      <p className="panel-footnote">Graph8 metric when connected, otherwise application-derived. Reply drafts require human review.</p>
+    </section>
+  );
+}
+
 function ActivityTimeline({ entries }) {
   const ordered = [...entries].sort((left, right) => right.at - left.at);
 
@@ -376,6 +427,8 @@ export default function App() {
   const [visitor, setVisitor] = useState(initialResource);
   const [graph8, setGraph8] = useState(initialResource);
   const [dashboard, setDashboard] = useState(initialResource);
+  const [recovery, setRecovery] = useState(initialResource);
+  const [outbound, setOutbound] = useState(initialResource);
   const [activity, setActivity] = useState([]);
 
   function logActivity(title, detail, status) {
@@ -426,8 +479,16 @@ export default function App() {
   async function checkDashboard(signal) {
     setDashboard((current) => ({ ...current, status: "loading", error: null }));
     try {
-      const [state, events] = await Promise.all([getDashboardState({ signal }), getEvents(20, { signal })]);
+      const [state, events, rec, seq, inbox] = await Promise.all([
+        getDashboardState({ signal }),
+        getEvents(20, { signal }),
+        getRecovery({ signal }).catch(() => null),
+        getSequenceStatus({ signal }).catch(() => null),
+        getInboxStatus({ signal }).catch(() => null),
+      ]);
       setDashboard({ status: "success", data: { ...state, events: events.events || [] }, error: null, checkedAt: new Date() });
+      if (rec) setRecovery({ status: "success", data: rec, error: null, checkedAt: new Date() });
+      if (seq || inbox) setOutbound({ status: "success", data: { sequence: seq, inbox }, error: null, checkedAt: new Date() });
     } catch (error) {
       if (error.name === "AbortError") return;
       setDashboard({ status: "error", data: null, error: error.message, checkedAt: new Date() });
@@ -529,6 +590,11 @@ export default function App() {
         <div className="secondary-grid">
           <MeetingPanel meeting={meeting} />
           <CoachPanel coaching={coaching} voice={voice} />
+        </div>
+
+        <div className="secondary-grid">
+          <RecoveryPanel recovery={recovery.status === "success" ? recovery.data : dashboard.status === "success" ? dashboard.data?.recovery : null} sequence={outbound.status === "success" ? outbound.data?.sequence : dashboard.status === "success" ? dashboard.data?.recovery?.sequence : null} />
+          <OutboundPanel sequence={outbound.status === "success" ? outbound.data?.sequence : null} inbox={outbound.status === "success" ? outbound.data?.inbox : null} />
         </div>
 
         <ActivityTimeline entries={timelineEntries} />

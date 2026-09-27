@@ -30,3 +30,19 @@ export function getDashboardState(options) {
 export function getEvents(limit = 20, options) {
   return request(`/api/events?limit=${limit}`, options);
 }
+
+export function getRecovery(options) {
+  return request("/api/recovery", options);
+}
+
+export function getSequenceStatus(options) {
+  return request("/api/sequences/status", options);
+}
+
+export function getInboxStatus(options) {
+  return request("/api/inbox/status", options);
+}
+
+export function getAnalytics(options) {
+  return request("/api/analytics", options);
+}

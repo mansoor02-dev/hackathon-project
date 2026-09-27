@@ -3,8 +3,15 @@ import { fetchCompanyDetails } from "./company-service.js";
 import { generateCoachingScript, buildLocalPrep, voiceStatus } from "./voice-coaching-service.js";
 import { getGraph8Event } from "../utils/graph8-event.js";
 import { recordEvent, hasSeen, markSeen } from "./event-store.js";
+import { cancelRecovery, upsertOpportunity } from "./recovery/store.js";
 
+// Verified KNOWN_WEBHOOK_EVENTS: meeting.booked, meeting.cancelled,
+// meeting.rescheduled, meeting.no_show. Booking stops recovery for the
+// account; cancellation re-opens it.
 const BOOKED_EVENTS = new Set(["meeting.booked", "meeting_booked", "appointments.booked"]);
+const CANCELLED_EVENTS = new Set(["meeting.cancelled", "meeting_cancelled"]);
+const RESCHEDULED_EVENTS = new Set(["meeting.rescheduled", "meeting_rescheduled"]);
+const NO_SHOW_EVENTS = new Set(["meeting.no_show", "meeting_no_show"]);
 
 function meetingKey(data) {
   return (
@@ -16,6 +23,45 @@ function meetingKey(data) {
 
 export async function processMeetingEvent(payload) {
   const { event, data } = getGraph8Event(payload || {});
+
+  if (CANCELLED_EVENTS.has(event)) {
+    const domain = String(data?.company_domain || data?.domain || "").toLowerCase();
+    const key = meetingKey(data || {});
+    if (key && hasSeen(key)) return { status: "duplicate", event };
+    if (key) markSeen(key);
+    recordEvent("meeting_cancelled", {
+      company: data?.company_name || null,
+      domain: domain || null,
+      metadata: { meetingId: data?.meeting_id || null, idempotencyKey: key },
+    });
+    if (domain) {
+      upsertOpportunity(domain, {
+        status: "candidate",
+        recoveryEligible: true,
+        enrollmentStatus: "cancelled_meeting",
+        timelineEvent: "meeting_cancelled",
+        timelineDetail: "account eligible for recovery again",
+      });
+    }
+    return { status: "meeting_cancelled", event };
+  }
+
+  if (RESCHEDULED_EVENTS.has(event)) {
+    const key = meetingKey(data || {});
+    if (key && hasSeen(key)) return { status: "duplicate", event };
+    if (key) markSeen(key);
+    recordEvent("meeting_rescheduled", {
+      company: data?.company_name || null,
+      domain: data?.company_domain || null,
+      metadata: { meetingId: data?.meeting_id || null, scheduledAt: data?.scheduled_at || null },
+    });
+    return { status: "meeting_rescheduled", event };
+  }
+
+  if (NO_SHOW_EVENTS.has(event)) {
+    recordEvent("meeting_no_show", { metadata: { meetingId: data?.meeting_id || null } });
+    return { status: "meeting_no_show", event };
+  }
 
   if (!BOOKED_EVENTS.has(event)) {
     return { status: "ignored", event };
@@ -80,6 +126,11 @@ export async function processMeetingEvent(payload) {
     visitor: { contactId },
     metadata: { meetingId, title: meetingTitle, scheduledAt, idempotencyKey: key },
   });
+
+  // Conversion wins: stop/disable recovery for this account.
+  if (companyDomain) {
+    cancelRecovery(String(companyDomain).toLowerCase(), `meeting booked (${meetingId || contactId})`);
+  }
 
   // Acknowledge fast: coaching runs async (no queue infra — setImmediate).
   setImmediate(async () => {

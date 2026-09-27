@@ -3,7 +3,9 @@ import { fetchCompanyDetails } from "./company-service.js";
 import { generateDynamicLandingPage } from "./landing-page-service.js";
 import { classifyTraffic, intentLevel, personalizationVariant } from "./traffic-classifier.js";
 import { buildPersonalization } from "./personalization-content.js";
-import { recordEvent, hasSeen, markSeen } from "./event-store.js";
+import { recordEvent, hasSeen, markSeen, listEvents } from "./event-store.js";
+import { isRecoveryEligible } from "./recovery/qualification.js";
+import { upsertOpportunity } from "./recovery/store.js";
 import { getGraph8Event } from "../utils/graph8-event.js";
 
 const VISITOR_EVENTS = new Set([
@@ -139,6 +141,46 @@ export async function processVisitorEvent(payload) {
 
   if (key) markSeen(key);
 
+  // Inbound -> Outbound Recovery: high-intent + engagement + no meeting
+  // creates a recovery opportunity. Sequencer owns timing; we only flag eligibility.
+  const domainKey = String(company?.domain || companyDomain || "").toLowerCase();
+  let recovery = { eligible: false };
+  if (domainKey) {
+    const meetingBooked = listEvents(500).some(
+      (e) => e.type === "meeting_booked" && String(e.domain || "").toLowerCase() === domainKey
+    );
+    const decision = isRecoveryEligible({
+      intentScore,
+      trafficType,
+      domain: domainKey,
+      companyName: company?.companyName,
+      hasEngagement: Boolean(landingPage || company?.companyName),
+      meetingBooked,
+    });
+    recovery = {
+      eligible: decision.eligible,
+      reason: decision.reason,
+      trafficType: decision.trafficType || trafficType,
+    };
+    if (decision.eligible) {
+      upsertOpportunity(domainKey, {
+        company: company?.companyName || companyNameGuess,
+        companyId: v.companyId,
+        intentScore,
+        trafficType,
+        recoveryEligible: true,
+        status: "candidate",
+        timelineEvent: "recovery_created",
+        timelineDetail: `Intent ${intentScore} (${trafficType})`,
+      });
+      recordEvent("recovery_created", {
+        company: company?.companyName || companyNameGuess,
+        domain: domainKey,
+        metadata: { intentScore, trafficType },
+      });
+    }
+  }
+
   return {
     status: "acknowledged",
     intent_score: intentScore,
@@ -149,5 +191,10 @@ export async function processVisitorEvent(payload) {
     company: company ? { name: company.companyName, domain: company.domain, industry: company.industry } : null,
     experience: { variant, headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: landingPage?.url || null },
     landing_page: landingPage,
+    recovery: {
+      eligible: recovery.eligible,
+      reason: recovery.reason || null,
+      domain: domainKey || null,
+    },
   };
 }
