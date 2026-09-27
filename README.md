@@ -58,29 +58,61 @@ visitor -> Graph8 signals -> Express backend -> classification
 ## Local setup
 
 ```bash
-cd backend && cp .env.example .env   # fill in keys below
+cd backend && cp .env.example .env   # fill in keys (see table below)
 npm install
 node server.js                        # :3000
 
 cd frontend && npm install
-# set BACKEND_PROXY_TARGET in .env.local, then:
+cp .env.example .env.local            # default BACKEND_PROXY_TARGET already points at :3000
 npm run dev                           # :5173, proxies /health + /api -> backend
 ```
 
+## Live demo script (judges, ~5 minutes)
+
+Narrative: *"Signal Desk turns anonymous B2B website traffic into an automated
+revenue workflow — identify → understand → personalize → convert → recover."*
+
+1. **Connected.** Open the dashboard (`:5173`), point at the top bar:
+   Backend Connected + Graph8 Connected (`GET /api/graph8/status`).
+2. **Identify.** Send (or await) a `visitor.identified` webhook — or demo-fast:
+   open `/api/resolve-visitor?domain=<customer-domain>` (live `enrich.company`).
+   Dashboard shows company, traffic type, intent score, variant.
+3. **Personalize.** Show the personalized headline/CTA + the reused Graph8
+   landing page (`experience.page_url`, `page_mode: reused|generated`).
+4. **Convert.** Book via Graph8 Calendar → `meeting.booked` webhook →
+   dashboard records the meeting + AI sales prep (real voice script, since
+   `GRAPH8_VOICE_AGENT_ID` is set).
+5. **Recover (the core story).** High-intent account + engagement + NO meeting →
+   recovery opportunity appears (`GET /api/recovery`). Run
+   `POST /api/recovery/:domain/process` → contact discovered → enriched →
+   email verified → **"Ready for Sequence"** (dry-run: `AUTO_ENROLL=false`,
+   nothing is sent — say this to the judges). Booking a meeting cancels
+   recovery for the account automatically.
+6. **Outbound honesty.** Sequence panel shows `NOT_CONFIGURED` until a real
+   sequence id is set — the app displays the gap instead of faking it.
+
+If anything is offline on stage: every panel has an honest empty state, and
+`/api/analytics` labels each number `graph8` / `app` / `demo` — nothing is
+fabricated, which is itself a talking point.
+
 ## Environment variables
 
-Backend (see `backend/.env.example`): `PORT`, `G8_API_KEY` (server-only),
-`GRAPH8_BASE_URL`, `GRAPH8_WEBHOOK_SECRET` (server-only),
-`GRAPH8_PAGE_TEMPLATE`, `GRAPH8_TARGET_ACCOUNTS` (comma-separated, optional),
-`GRAPH8_INTENT_THRESHOLD` (default 60, medium threshold fixed at 40),
-`GRAPH8_VOICE_AGENT_ID` (optional; unset = labelled simulation),
-`GRAPH8_RECOVERY_SEQUENCE_ID` (optional; unset = "Sequence not configured"),
-`GRAPH8_RECOVERY_AUTO_ENROLL` (default `false`; only `true` enrolls real contacts),
-`GRAPH8_RECOVERY_LIST_ID` / `GRAPH8_RECOVERY_LIST_TITLE` (recovery segmentation),
-`GRAPH8_RECOVERY_WORKFLOW_ID` (optional), `GRAPH8_SKILL_QUALIFICATION_ID` /
-`GRAPH8_SKILL_CONTACT_ID` / `GRAPH8_SKILL_OUTREACH_ID` (optional).
+Full template with where-to-find-each-value: `backend/.env.example`
+(copy it to `backend/.env`, which is gitignored). Summary:
 
-Frontend (`frontend/.env.local`): `BACKEND_PROXY_TARGET=http://127.0.0.1:3000`,
+| Variable | Required? | What it does |
+|---|---|---|
+| `G8_API_KEY` | Yes | Graph8 API key (Settings → MCP & API). Server-only. |
+| `GRAPH8_WEBHOOK_SECRET` | Yes for webhooks | Signing secret for `X-G8-Signature` verification. **All webhooks 401 while empty/mismatched.** |
+| `GRAPH8_RECOVERY_LIST_ID` | Recommended | Recovery segmentation list (this workspace: `3` = "Recovery List"). Falls back to title lookup. |
+| `GRAPH8_VOICE_AGENT_ID` | Recommended | Real AI sales-prep scripts. Unset = labelled simulation. |
+| `GRAPH8_TARGET_ACCOUNTS` | Recommended (demo) | Comma-separated demo domains for `target_account` personalization. |
+| `GRAPH8_RECOVERY_SEQUENCE_ID` | For live outreach | Sequence id from Graph8 UI. Empty = "Sequence not configured" (still demo-able). |
+| `GRAPH8_RECOVERY_AUTO_ENROLL` | Safety | Keep `false` (preview only). `true` + sequence id = real enrollment. |
+| `GRAPH8_PAGE_TEMPLATE` / `GRAPH8_INTENT_THRESHOLD` / `GRAPH8_BASE_URL` | Optional | Defaults: `lead_magnet` / `60` / Graph8 API base. |
+| `GRAPH8_RECOVERY_WORKFLOW_ID` / `GRAPH8_SKILL_*_ID` | Optional | Advanced integrations; core flow doesn't need them. |
+
+Frontend (`frontend/.env.local`, gitignored): `BACKEND_PROXY_TARGET=http://127.0.0.1:3000`,
 `VITE_API_BASE_URL=` (empty = same origin, via dev proxy). No secrets in Vite env.
 
 ## Graph8 setup
@@ -109,6 +141,33 @@ missing/invalid/tampered → 401; malformed signed JSON → 400; unknown event �
 ngrok http 3000
 # use the https URL as {PUBLIC} above; keep Express running locally
 ```
+
+## Pre-demo checklist (night before)
+
+- [ ] `GET /api/graph8/status` → `{connected:true}` (key valid, credits available).
+- [ ] Webhook subscriptions exist in Graph8 and point at the current `{PUBLIC}` URL.
+- [ ] One test delivery per webhook type → all 200s, dashboard rows appear.
+- [ ] `GRAPH8_TARGET_ACCOUNTS` contains 2–3 real demo domains.
+- [ ] Voice mode decided: real agent id set (current) or unset for the simulation narrative.
+- [ ] Sequence decision: id set (live/dry-run) or empty ("not configured" narrative).
+- [ ] `GRAPH8_RECOVERY_AUTO_ENROLL=false` confirmed (never live-send on stage).
+- [ ] Full suites green: `node tests/backend-test.mjs` (29) + `node tests/recovery-test.mjs` (25).
+- [ ] `backend/data/events.json` + `backend/data/recovery.json` cleared → clean dashboard.
+
+## Pushing to GitHub safely
+
+Secrets live only in `backend/.env` and `frontend/.env.local`, both gitignored
+(`backend/.gitignore`, root `.gitignore`). Before pushing:
+
+```bash
+git status --short          # .env / .env.local must NOT appear
+git check-ignore -v backend/.env frontend/.env.local   # both should match an ignore rule
+```
+
+What judges/cloners get instead: `backend/.env.example` + `frontend/.env.example`
+(placeholders only, zero real credentials). NOTE: root `.gitignore` currently
+also ignores `ARCHITECTURE.md` — remove that line if you want the architecture
+doc visible on GitHub.
 
 ## How personalization works
 
