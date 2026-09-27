@@ -150,7 +150,7 @@ function CompanyDetails({ visitor }) {
 }
 
 function VisitorPanel({ resource, onRetry }) {
-  const resolved = resource.status === "success" && resource.data?.personalized === true;
+  const resolved = resource.status === "success" && Boolean(resource.data?.company);
   const company = visitorCompany(resource.data);
   const intent = resource.status === "success" ? visitorIntent(resource.data) : null;
   const intentPct = typeof intent?.score === "number" ? Math.max(0, Math.min(100, intent.score)) : 0;

@@ -138,11 +138,99 @@ Graph8 setup: API key (Settings → MCP & API) → `G8_API_KEY`; signing secret 
 list id → `GRAPH8_RECOVERY_LIST_ID`. Verify: `GET /api/graph8/status` →
 `{connected:true}` (read-only `contacts.list`, no billable calls).
 
-Webhooks (via ngrok `{PUBLIC}`): `visitor.identified`/`intent.signal` →
-`/webhooks/graph8/signals/visitor`; `meeting.booked`/`cancelled`/`rescheduled`
-→ `/webhooks/graph8/appointments/booked`; replies/sequence/forms →
-`/webhooks/graph8/engagement`. Raw-body HMAC (`X-G8-Signature`, 300 s
-tolerance): bad/missing signature → 401; malformed JSON → 400.
+## Ngrok setup (step by step)
+
+Graph8 sends webhooks over the public internet, so your local `:3000` needs a
+public URL. That's what ngrok is for.
+
+**Step 1 — backend running first.**
+```bash
+cd backend && node server.js      # keep this terminal open (:3000)
+```
+
+**Step 2 — install + authenticate ngrok** (once per machine).
+```bash
+ngrok config add-authtoken PASTE_YOUR_NGROK_TOKEN_HERE   # from https://dashboard.ngrok.com
+```
+
+**Step 3 — expose the backend** (second terminal).
+```bash
+ngrok http 3000
+```
+Copy the `https://…ngrok-free.app` URL from the ngrok output — call it
+`{PUBLIC}` below. Keep this terminal open; killing ngrok kills deliveries.
+
+**Step 4 — subscribe in Graph8.** Create three webhook subscriptions pointing
+at `{PUBLIC}` (same signing secret as `GRAPH8_WEBHOOK_SECRET`):
+
+| Events | URL |
+|---|---|
+| `visitor.identified`, `intent.signal` | `{PUBLIC}/webhooks/graph8/signals/visitor` |
+| `meeting.booked`, `meeting.cancelled`, `meeting.rescheduled` | `{PUBLIC}/webhooks/graph8/appointments/booked` |
+| `engagement.email_replied`, `sequence.contact_enrolled`, `form.submitted` | `{PUBLIC}/webhooks/graph8/engagement` |
+
+**Step 5 — ngrok restarts change the URL.** Free ngrok URLs change on every
+restart. After any restart, update the three subscription URLs in Graph8 to
+the new `{PUBLIC}`. (A reserved ngrok domain avoids this.)
+
+## Live check (step by step)
+
+Run these in order. Everything must be green before the demo.
+
+**1. Backend is up.**
+```bash
+curl http://127.0.0.1:3000/health
+# → {"ok":true,"service":"graph8-ghost-ops"}
+```
+
+**2. Graph8 credentials work.**
+```bash
+curl http://127.0.0.1:3000/api/graph8/status
+# → {"connected":true,"provider":"graph8"}
+# NOT connected → G8_API_KEY missing/invalid. Nothing downstream works.
+```
+
+**3. Visitor resolution is live (spends ~1 enrichment credit).**
+```bash
+curl "http://127.0.0.1:3000/api/resolve-visitor?domain=graph8.com"
+# → personalized:true, company{...}, intent{...},
+#   experience{variant, family, reason, signals[...], page_url,...}
+```
+
+**4. Recovery + sequence state is honest.**
+```bash
+curl http://127.0.0.1:3000/api/recovery
+# → {"opportunities":[...],"counts":{...},"sequence":{...},"list":{...}}
+curl http://127.0.0.1:3000/api/sequences/status
+# → {"mode":"DRY_RUN","sequenceId":"...","details":{...},"preview":{...}}
+# mode DRY_RUN = draft configured, nothing will be sent. NOT_CONFIGURED = no id set.
+```
+
+**5. Webhooks arrive (do one test delivery per subscription in Graph8).**
+```bash
+curl "http://127.0.0.1:3000/api/events?limit=5"
+# → fresh rows: visitor_identified / meeting_booked / reply_received / ...
+```
+Each Graph8 test delivery should return HTTP 200 in Graph8's delivery log.
+Dashboard (`:5173`) shows the same rows in the activity timeline.
+
+**6. Full pipeline dry-run (no sending, `AUTO_ENROLL=false`).**
+```bash
+curl -X POST http://127.0.0.1:3000/api/recovery/<domain>/process \
+  -H "Content-Type: application/json" -d '{"company":"<Name>","intentScore":85}'
+# → {"status":"ready_for_sequence",...}  (or needs_research with the reason)
+```
+
+**Troubleshooting.**
+
+| Symptom | Cause → fix |
+|---|---|
+| Webhooks return 401 | `GRAPH8_WEBHOOK_SECRET` empty or mismatched → must equal Graph8's secret; restart backend after changing `.env`. |
+| Webhooks return 400 | Malformed JSON body → check the sender payload. |
+| No deliveries reach you | ngrok restarted (URL changed) or tunnel down → update subscription URLs; check ngrok terminal. |
+| `{"connected":false}` | Bad API key or no network → fix `G8_API_KEY`, restart. |
+| `NOT_CONFIGURED` sequence | No sequence id → run `POST /api/sequences/provision` (needs `AUTO_PROVISION=true`) or paste an id. |
+| Dashboard empty after tests | Normal — tests write events; clear `backend/data/events.json` + `recovery.json` and restart for a clean stage. |
 
 ## Environment variables
 
