@@ -298,7 +298,13 @@ export default function Experience() {
             <button type="submit">Load experience</button>
           </div>
           <p>
-            {isDemo ? "Demo resolution — data for this preview came from a local demo query, not a live Graph8 webhook." : isLive ? "Live Graph8 signal — this preview reflects the latest webhook resolution." : "Add ?domain=microsoft.com to preview a resolved company without ngrok."}
+            {demoPersonalized
+              ? "Demo preview: this domain is treated as the visitor; copy is tailored to the company profile without claiming live intent."
+              : isDemo
+                ? "Domain preview resolved using Graph8 company and intent data."
+                : isLive
+                  ? "Live Graph8 signal — this preview reflects the latest webhook resolution."
+                  : "Enter a company domain to preview its experience."}
           </p>
         </form>
 
