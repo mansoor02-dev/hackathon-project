@@ -28,6 +28,7 @@ export const pageTemplate = process.env.GRAPH8_PAGE_TEMPLATE || process.env.GRAP
 export const targetAccounts = String(process.env.GRAPH8_TARGET_ACCOUNTS || "")
   .split(",")
   .map((s) => s.trim().toLowerCase())
+  .map((account) => account.includes("@") ? account.slice(account.lastIndexOf("@") + 1) : account)
   .filter(Boolean);
 
 export const graph8BaseUrl = process.env.GRAPH8_BASE_URL || "https://be.graph8.com/api/v1";
