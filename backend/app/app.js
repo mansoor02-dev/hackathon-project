@@ -38,7 +38,7 @@ app.get("/health", (_req, res) => {
 
 app.get("/", (_req, res) => {
   res.json({ok: true, service: 'Root'});
-})
+});
 
 // Malformed JSON + body-parser errors -> 400 (never 500, never reach handlers).
 // eslint-disable-next-line no-unused-vars
