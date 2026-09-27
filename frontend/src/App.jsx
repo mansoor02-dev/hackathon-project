@@ -21,6 +21,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { getHealth, resolveVisitor, getGraph8Status, getDashboardState, getEvents, getRecovery, getSequenceStatus, getInboxStatus } from "./api.js";
+import Experience from "./Experience.jsx";
 
 const initialResource = { status: "loading", data: null, error: null, checkedAt: null };
 
@@ -48,6 +49,19 @@ function visitorIntent(visitor) {
 
 function visitorExperience(visitor) {
   return visitor?.experience || null;
+}
+
+// `resolved` = company/domain identified. `personalized` = qualifies for a
+// non-default experience. They are intentionally separate — never use
+// `personalized === true` as the definition of resolution.
+function isResolvedVisitor(visitor) {
+  if (!visitor) return false;
+  if (typeof visitor.resolved === "boolean") return visitor.resolved;
+  return Boolean(visitorCompany(visitor) || visitorDomain(visitor));
+}
+
+function isPersonalizedVisitor(visitor) {
+  return visitor?.personalized === true;
 }
 
 function timeLabel(value) {
@@ -150,9 +164,11 @@ function CompanyDetails({ visitor }) {
 }
 
 function VisitorPanel({ resource, onRetry }) {
-  const resolved = resource.status === "success" && Boolean(resource.data?.company);
+  const resolved = resource.status === "success" && isResolvedVisitor(resource.data);
+  const personalized = resource.status === "success" && isPersonalizedVisitor(resource.data);
   const company = visitorCompany(resource.data);
   const intent = resource.status === "success" ? visitorIntent(resource.data) : null;
+  const experience = resource.status === "success" ? visitorExperience(resource.data) : null;
   const intentPct = typeof intent?.score === "number" ? Math.max(0, Math.min(100, intent.score)) : 0;
 
   return (
@@ -179,14 +195,14 @@ function VisitorPanel({ resource, onRetry }) {
                   <span className="tag-dot" />{resolved ? "Resolved" : "Unresolved"}
                 </span>
               </div>
-              <p>{resolved ? (resource.data.headline || visitorExperience(resource.data)?.headline) : "Current visitor resolution is not persisted by the backend."}</p>
+              <p>{resolved ? (resource.data.headline || visitorExperience(resource.data)?.headline) : "No company resolved for this visitor — showing the default experience."}</p>
             </div>
             <div className="lookup-stamp">
               <span>LAST CHECK</span>
               <strong>{resource.checkedAt ? timeLabel(resource.checkedAt) : "Just now"}</strong>
             </div>
           </div>
-          <CompanyDetails visitor={resolved ? resource.data : null} />
+          <CompanyDetails visitor={resource.data} />
           <div className="intent-block">
             <div className="intent-main">
               <div>
@@ -195,10 +211,23 @@ function VisitorPanel({ resource, onRetry }) {
               </div>
               <div className="intent-status">
                 <span className="intent-indicator"><CircleDashed size={16} /></span>
-                <div><strong>{intent ? `${intent.level} intent · ${resource.data.traffic_type}` : "Not available"}</strong><span>{intent ? "Reported by the visitor resolver" : "No intent score is returned by this endpoint"}</span></div>
+                <div><strong>{intent ? `${intent.level} intent · ${resource.data.traffic_type}` : `Traffic: ${resource.data.traffic_type || "unknown"}`}</strong><span>{intent ? "Reported by the visitor resolver" : "No intent score is returned by this endpoint"}</span></div>
               </div>
             </div>
             <div className="intent-track" aria-label={intent ? `Intent score ${intent.score}` : "Intent score unavailable"}><span style={intent ? { width: `${intentPct}%` } : undefined} /></div>
+          </div>
+          <div className="status-list visitor-experience-list">
+            <div className="status-row">
+              <span className={`row-icon ${personalized ? "row-icon-success" : ""}`}>{personalized ? <Check size={15} /> : <CircleDashed size={15} />}</span>
+              <div><strong>Experience: {experience?.family ? experience.family.charAt(0).toUpperCase() + experience.family.slice(1) : "Default"}</strong><span>{experience?.variant ? `Variant ${experience.variant}` : "Default variant"}{personalized ? "" : " · default experience"}</span></div>
+              <span className={`row-status ${personalized ? "text-success" : "text-muted"}`}>{personalized ? "Personalized" : "Default"}</span>
+            </div>
+            {experience?.reason && (
+              <div className="status-row">
+                <span className="row-icon"><ShieldCheck size={15} /></span>
+                <div><strong>Reason</strong><span style={{ whiteSpace: "normal" }}>{experience.reason}</span></div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -207,7 +236,8 @@ function VisitorPanel({ resource, onRetry }) {
 }
 
 function PersonalizationPanel({ resource }) {
-  const resolved = resource.status === "success" && resource.data?.personalized === true;
+  const resolved = resource.status === "success" && isResolvedVisitor(resource.data);
+  const personalized = resource.status === "success" && isPersonalizedVisitor(resource.data);
   const experience = resource.status === "success" ? visitorExperience(resource.data) : null;
 
   return (
@@ -225,12 +255,17 @@ function PersonalizationPanel({ resource }) {
         <div className="status-list">
           <div className="status-row">
             <span className={`row-icon ${resolved ? "row-icon-success" : ""}`}>{resolved ? <Check size={15} /> : <CircleDashed size={15} />}</span>
-            <div><strong>Personalized response</strong><span>{resolved ? "Available for this request" : "Not triggered for this visitor"}</span></div>
-            <span className={`row-status ${resolved ? "text-success" : "text-muted"}`}>{resolved ? "Ready" : "Inactive"}</span>
+            <div><strong>Visitor resolution</strong><span>{resolved ? `Resolved${visitorCompany(resource.data) ? ` · ${visitorCompany(resource.data)}` : ""}` : "Unresolved — default experience"}</span></div>
+            <span className={`row-status ${resolved ? "text-success" : "text-muted"}`}>{resolved ? "Resolved" : "Unresolved"}</span>
+          </div>
+          <div className="status-row">
+            <span className={`row-icon ${personalized ? "row-icon-success" : ""}`}>{personalized ? <Check size={15} /> : <CircleDashed size={15} />}</span>
+            <div><strong>Personalized response</strong><span>{personalized ? "Available for this request" : "Not triggered — visitor receives the default experience"}</span></div>
+            <span className={`row-status ${personalized ? "text-success" : "text-muted"}`}>{personalized ? "Ready" : "Default"}</span>
           </div>
           <div className="status-row">
             <span className="row-icon"><Globe2 size={15} /></span>
-            <div><strong>Landing page</strong><span>{experience?.page_url || (resolved ? "No page details in resolver response" : "No page was reported")}</span></div>
+            <div><strong>Landing page</strong><span>{experience?.page_url || (personalized ? "No page details in resolver response" : "No page was reported")}</span></div>
             <span className={`row-status ${experience?.page_url ? "text-success" : "text-muted"}`}>{experience?.page_url ? (experience.page_mode === "reused" ? "Reused" : "Generated") : "Not reported"}</span>
           </div>
           {experience?.variant && (
@@ -253,8 +288,8 @@ function PersonalizationPanel({ resource }) {
               <span className="row-status text-muted">graph8</span>
             </div>
           )}
-          {resolved && <div className="personalized-copy">{resource.data.cta}</div>}
-          {!resolved && resource.status === "success" && <p className="panel-footnote">No personalization for this visitor (traffic: {resource.data.traffic_type || "unknown"}).</p>}
+          {personalized && <div className="personalized-copy">{resource.data.cta}</div>}
+          {!personalized && resource.status === "success" && <p className="panel-footnote">{resolved ? `Default experience for this visitor (traffic: ${resource.data.traffic_type || "unknown"}).` : "Unresolved visitor — showing the default experience."}</p>}
         </div>
       )}
     </section>
@@ -435,7 +470,7 @@ function ActivityTimeline({ entries }) {
   );
 }
 
-export default function App() {
+export function Dashboard() {
   const [health, setHealth] = useState(initialResource);
   const [visitor, setVisitor] = useState(initialResource);
   const [graph8, setGraph8] = useState(initialResource);
@@ -468,7 +503,8 @@ export default function App() {
       const data = await resolveVisitor({ signal });
       const checkedAt = new Date();
       setVisitor({ status: "success", data, error: null, checkedAt });
-      logActivity("Visitor resolution checked", data.personalized ? "A personalized visitor response was returned" : "No saved visitor profile was returned", "success");
+      const resolvedLabel = isResolvedVisitor(data) ? `Resolved${visitorCompany(data) ? ` · ${visitorCompany(data)}` : ""}` : "Unresolved visitor";
+      logActivity("Visitor resolution checked", `${resolvedLabel}${isPersonalizedVisitor(data) ? " · personalized" : " · default experience"}`, "success");
     } catch (error) {
       if (error.name === "AbortError") return;
       setVisitor({ status: "error", data: null, error: error.message, checkedAt: new Date() });
@@ -553,11 +589,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Signal Desk home">
+        <a className="brand" href="/dashboard" aria-label="Signal Desk home">
           <span className="brand-mark"><Activity size={19} strokeWidth={2.2} /></span>
           <span className="brand-name">signal<span>desk</span></span>
         </a>
         <div className="topbar-right">
+          <nav className="topbar-nav">
+            <a href="/experience">Experience</a>
+            <a href="/dashboard" className="topbar-nav-active">Dashboard</a>
+          </nav>
           <span className="topbar-caption">WORKFLOW OVERVIEW</span>
           <div className="connection-group">
             <ConnectionStatus
@@ -619,4 +659,10 @@ export default function App() {
       </main>
     </div>
   );
+}
+
+export default function App() {
+  const path = typeof window !== "undefined" ? window.location.pathname : "/";
+  if (path.startsWith("/experience")) return <Experience />;
+  return <Dashboard />;
 }

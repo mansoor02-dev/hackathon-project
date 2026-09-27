@@ -15,8 +15,9 @@ export function getHealth(options) {
   return request("/health", options);
 }
 
-export function resolveVisitor(options) {
-  return request("/api/resolve-visitor", options);
+export function resolveVisitor({ domain = null, signal } = {}) {
+  const query = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+  return request(`/api/resolve-visitor${query}`, { signal });
 }
 
 export function getGraph8Status(options) {

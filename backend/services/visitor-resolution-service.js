@@ -60,7 +60,28 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
   }
 
   if (!base || (!base.companyName && !base.domain)) {
-    return { personalized: false, traffic_type: "unknown", source: base?.source || "none" };
+    const fallback = buildPersonalization({ companyName: null, trafficType: "unknown", intentScore: null });
+    return {
+      resolved: false,
+      personalized: false,
+      traffic_type: "unknown",
+      company: null,
+      domain: null,
+      intent: { score: null, level: intentLevel(null) },
+      experience: {
+        variant: "generic",
+        family: fallback.family,
+        reason: fallback.reason,
+        signals: [],
+        headline: fallback.headline,
+        supporting: fallback.supporting,
+        cta: fallback.cta,
+        page_url: null,
+        page_id: null,
+        page_mode: "fallback",
+      },
+      source: base?.source || "none",
+    };
   }
 
   const trafficType = base.trafficType || classifyTraffic({
@@ -102,7 +123,10 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
   }
 
   // Backwards-compatible flat fields (current frontend) + rich contract (prompt §7).
+  // `resolved` = company/domain/signals identified. `personalized` = qualifies
+  // for a non-default experience. They are intentionally separate.
   return {
+    resolved: true,
     personalized: trafficType !== "unknown" && trafficType !== "low_intent",
     traffic_type: trafficType,
     company: { name: base.companyName, domain: base.domain, industry: base.industry },
