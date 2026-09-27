@@ -27,6 +27,7 @@ app.use(
 );
 
 app.use("/webhooks/graph8", graph8Webhooks);
+app.use("/webhooks", graph8Webhooks);
 app.use("/api", visitorRoutes);
 app.use("/api", recoveryRoutes);
 app.use("/api", meetingRoutes);

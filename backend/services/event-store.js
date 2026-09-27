@@ -7,6 +7,12 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const DATA_FILE = path.join(DATA_DIR, "events.json");
 
 const MAX_EVENTS = 500;
+const VISITOR_EVENT_TYPES = new Set([
+  "personalization_served",
+  "personalization_generated",
+  "company_resolved",
+  "visitor_identified",
+]);
 
 let events = [];
 let seenIds = new Set();
@@ -80,13 +86,10 @@ export function getLatestByType(type) {
 }
 
 export function getLatestVisitor() {
-  return (
-    getLatestByType("personalization_served") ||
-    getLatestByType("personalization_generated") ||
-    getLatestByType("company_resolved") ||
-    getLatestByType("visitor_identified") ||
-    null
-  );
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (VISITOR_EVENT_TYPES.has(events[i].type)) return events[i];
+  }
+  return null;
 }
 
 export function getLatestMeeting() {

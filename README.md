@@ -165,6 +165,7 @@ at `{PUBLIC}` (same signing secret as `GRAPH8_WEBHOOK_SECRET`):
 
 | Events | URL |
 |---|---|
+| All supported events (single Graph8 webhook) | `{PUBLIC}/webhooks` |
 | `visitor.identified`, `intent.signal` | `{PUBLIC}/webhooks/graph8/signals/visitor` |
 | `meeting.booked`, `meeting.cancelled`, `meeting.rescheduled` | `{PUBLIC}/webhooks/graph8/appointments/booked` |
 | `engagement.email_replied`, `sequence.contact_enrolled`, `form.submitted` | `{PUBLIC}/webhooks/graph8/engagement` |
