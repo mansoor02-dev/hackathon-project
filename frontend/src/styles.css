@@ -263,9 +263,9 @@ code { padding: 1px 4px; border-radius: 4px; background: #f0f3f1; color: #52615c
 .experience { min-height: 100vh; display: flex; flex-direction: column; background: #fbfcfb; }
 .experience-default { background: linear-gradient(180deg, #f6f8f6 0%, #fbfcfb 320px); }
 .experience-saas { background: linear-gradient(180deg, #e9f2ff 0%, #fbfcfb 340px); }
-.experience-enterprise { background: linear-gradient(180deg, #1b2b28 0%, #243b37 300px, #fbfcfb 300px); }
-.experience-enterprise .experience-hero h1 { color: #fff; }
-.experience-enterprise .experience-hero .experience-supporting { color: #c9d8d3; }
+.experience-enterprise { background: #fbfcfb; }
+.experience-enterprise .experience-hero h1 { color: var(--ink); }
+.experience-enterprise .experience-hero .experience-supporting { color: var(--muted); }
 .experience-topbar { height: 68px; padding: 0 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 85%); }
 .experience-nav { display: flex; gap: 4px; }
 .experience-nav a { padding: 7px 12px; border-radius: 7px; color: #52605b; font-size: 12px; font-weight: 600; text-decoration: none; }
@@ -294,7 +294,7 @@ code { padding: 1px 4px; border-radius: 4px; background: #f0f3f1; color: #52615c
 .experience-cta:hover { filter: brightness(0.94); }
 .experience-secondary { display: inline-flex; align-items: center; gap: 7px; color: var(--accent-dark); font-size: 13px; font-weight: 600; text-decoration: none; }
 .experience-context { margin-top: 18px; color: var(--accent-dark); font-size: 13px; font-weight: 700; }
-.experience-enterprise .experience-context { color: #9fd0c2; }
+.experience-enterprise .experience-context { color: var(--accent-dark); }
 .experience-demo-note { display: flex; align-items: center; gap: 7px; margin-top: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: rgb(255 255 255 / 80%); color: #52605b; font-size: 12px; }
 .experience-footer { display: flex; justify-content: space-between; gap: 10px; padding: 16px 32px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; background: #fff; }
 .experience-footer a { color: var(--accent-dark); font-weight: 700; text-decoration: none; }
