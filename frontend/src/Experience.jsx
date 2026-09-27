@@ -249,6 +249,7 @@ export default function Experience() {
   const data = state.data;
   const resolved = state.status === "success" && (data?.resolved ?? Boolean(data?.company?.name || data?.domain));
   const personalized = state.status === "success" && data?.personalized === true;
+  const demoPersonalized = state.status === "success" && data?.demo_personalized === true;
   const company = data?.company?.name || null;
   const companyDomain = data?.domain || data?.company?.domain || null;
   const industry = data?.company?.industry || null;
@@ -319,10 +320,10 @@ export default function Experience() {
           <div className="experience-hero">
             <div className="experience-badges">
               <span className={`experience-badge ${personalized ? "badge-personalized" : "badge-default"}`}>
-                {personalized ? `Personalized · ${family}` : "Default experience"}
+                {personalized ? `${demoPersonalized ? "Demo personalized" : "Personalized"} · ${family}` : "Default experience"}
               </span>
               <span className="experience-badge badge-source">
-                {isDemo ? "Demo resolution" : isLive ? "Live Graph8 signal" : `Source: ${data?.source || "none"}`}
+                {demoPersonalized ? "Preview · no live intent claimed" : isDemo ? "Graph8 domain resolution" : isLive ? "Live Graph8 signal" : `Source: ${data?.source || "none"}`}
               </span>
             </div>
 
@@ -344,7 +345,7 @@ export default function Experience() {
 
             {isDemo && resolved && company && (
               <p className="experience-demo-note">
-                <Building2 size={14} /> Personalized for {company}
+                <Building2 size={14} /> {demoPersonalized ? "Demo preview for" : "Personalized for"} {company}
                 {companyDomain ? ` · ${companyDomain}` : ""}
                 {trafficType ? ` · ${trafficType.replace(/_/g, " ")}` : ""}
                 {typeof intent?.score === "number" ? ` · intent ${intent.score}` : ""}

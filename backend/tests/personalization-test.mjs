@@ -48,6 +48,10 @@ console.log("=== VARIANT SELECTION (unit) ===");
   record("target_account -> enterprise", c.family === "enterprise" && /target account/i.test(c.reason), c.reason);
   record("family helper agrees", personalizationFamily({ trafficType: "target_account" }) === "enterprise");
 }
+{
+  const c = buildPersonalization({ companyName: "Canva", industry: "Software", trafficType: "demo_preview", intentScore: 0 });
+  record("domain demo preview -> personalized SaaS copy without live intent claim", c.family === "saas" && c.variant === "demo_preview" && /not live intent/i.test(c.reason) && c.headline !== "AI infrastructure for modern teams.", JSON.stringify({ family: c.family, reason: c.reason }));
+}
 
 console.log("=== SEQUENCE CADENCE (unit) ===");
 {

@@ -34,6 +34,8 @@ export function classifyTraffic({ intentScore = null, domain = null, companyName
 export function personalizationVariant({ trafficType, industry = null }) {
   const ind = String(industry || "general").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "general";
   switch (trafficType) {
+    case "demo_preview":
+      return `demo_${ind}`;
     case "target_account":
       return `1_1_${ind}`;
     case "high_intent":

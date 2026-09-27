@@ -89,14 +89,17 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
     domain: base.domain,
     companyName: base.companyName,
   });
+  const demoPersonalized = base.source === "query" &&
+    (trafficType === "unknown" || trafficType === "low_intent");
+  const copyTrafficType = demoPersonalized ? "demo_preview" : trafficType;
 
   const copy = buildPersonalization({
     companyName: base.companyName,
     industry: base.industry,
-    trafficType,
+    trafficType: copyTrafficType,
     intentScore: base.intentScore,
   });
-  const variant = base.variant || `${personalizationVariant({ trafficType, industry: base.industry })}:${copy.variant}`;
+  const variant = base.variant || `${personalizationVariant({ trafficType: copyTrafficType, industry: base.industry })}:${copy.variant}`;
 
   // Reuse existing page when possible; generate only when necessary.
   let pageUrl = base.pageUrl || null;
@@ -127,11 +130,12 @@ export async function resolveVisitor({ ip = null, domain = null, company = null 
   // for a non-default experience. They are intentionally separate.
   return {
     resolved: true,
-    personalized: trafficType !== "unknown" && trafficType !== "low_intent",
+    personalized: demoPersonalized || (trafficType !== "unknown" && trafficType !== "low_intent"),
+    demo_personalized: demoPersonalized,
     traffic_type: trafficType,
     company: { name: base.companyName, domain: base.domain, industry: base.industry },
     intent: { score: base.intentScore, level: intentLevel(base.intentScore) },
-    experience: { variant, family: copy.family, reason: copy.reason, signals: base.signals || [], headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: pageUrl, page_id: pageId, page_mode: pageUrl ? pageMode : "fallback" },
+    experience: { variant, family: copy.family, reason: copy.reason, signals: base.signals || [], headline: copy.headline, supporting: copy.supporting, cta: copy.cta, page_url: pageUrl, page_id: pageId, page_mode: pageUrl ? pageMode : demoPersonalized ? "demo_preview" : "fallback" },
     // legacy flat fields:
     domain: base.domain,
     headline: copy.headline,

@@ -9,6 +9,10 @@ const TECH_HINTS = ["saas", "software", "technology", "tech", "ai", "cloud", "de
 
 export function personalizationFamily({ trafficType = "unknown", industry = null } = {}) {
   if (trafficType === "high_intent" || trafficType === "target_account") return "enterprise";
+  if (trafficType === "demo_preview") {
+    const ind = String(industry || "").toLowerCase();
+    return TECH_HINTS.some((h) => ind.includes(h)) ? "saas" : "enterprise";
+  }
   if (trafficType === "medium_intent") {
     const ind = String(industry || "").toLowerCase();
     if (TECH_HINTS.some((h) => ind.includes(h))) return "saas";
@@ -19,6 +23,8 @@ export function personalizationFamily({ trafficType = "unknown", industry = null
 export function variantReason({ companyName = null, trafficType = "unknown", intentScore = null, family = "default" } = {}) {
   const name = (companyName || "").trim() || "unknown company";
   switch (trafficType) {
+    case "demo_preview":
+      return `Demo personalization for ${name} — tailored by company profile, not live intent.`;
     case "target_account":
       return `Explicit target account (${name}) — strongest personalization.`;
     case "high_intent":
@@ -43,6 +49,21 @@ export function buildPersonalization({ companyName = null, industry = null, traf
   const scope = segment ? `${segment} teams` : "modern teams";
   const family = personalizationFamily({ trafficType, industry });
   const reason = variantReason({ companyName, trafficType, intentScore, family });
+
+  if (trafficType === "demo_preview" && name) {
+    return {
+      variant: "demo_preview",
+      family,
+      reason,
+      headline: family === "saas"
+        ? `AI infrastructure for ${scope}.`
+        : `A tailored AI path for ${name}.`,
+      supporting: segment
+        ? `Explore an AI infrastructure approach tailored for ${name}'s ${segment} context.`
+        : `Explore an AI infrastructure approach tailored for ${name}.`,
+      cta: `Explore for ${name}`,
+    };
+  }
 
   if (!name || trafficType === "unknown" || trafficType === "low_intent") {
     return {
